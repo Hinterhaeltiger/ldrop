@@ -1,0 +1,25 @@
+[package]
+name = "ldrop-core"
+description = "ldrop domain model, configuration, storage and capability rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dirs.workspace = true
+nix.workspace = true
+serde.workspace = true
+serde_ignored.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

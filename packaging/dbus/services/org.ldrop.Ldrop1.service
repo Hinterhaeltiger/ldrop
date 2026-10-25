@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.ldrop.Ldrop1
+Exec=/usr/bin/ldropd
+SystemdService=ldropd.service

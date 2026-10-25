@@ -1,0 +1,22 @@
+[Unit]
+Description=ldrop: Quick Share and AirDrop for Linux
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.ldrop.Ldrop1
+ExecStart=/usr/bin/ldropd
+Restart=on-failure
+RestartSec=2
+
+# The daemon is unprivileged; privileged radio work goes through ldrop-netd (SPEC §13).
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=graphical-session.target

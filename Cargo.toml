@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/ldrop-core",
+    "crates/ldrop-wifi",
+    "crates/ldrop-ble",
+    "crates/ldropd",
+    "crates/ldrop-client",
+    "crates/ldrop-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+rust-version = "1.89"
+repository = "https://example.invalid/ldrop"
+
+[workspace.dependencies]
+ldrop-core = { path = "crates/ldrop-core" }
+ldrop-wifi = { path = "crates/ldrop-wifi" }
+ldrop-ble = { path = "crates/ldrop-ble" }
+ldrop-client = { path = "crates/ldrop-client" }
+ldropd = { path = "crates/ldropd" }
+
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+dirs = "6"
+futures-util = "0.3"
+mime_guess = "2"
+nix = { version = "0.31", features = ["net", "hostname", "socket"] }
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_ignored = "0.1"
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tokio-util = "0.7"
+tokio = { version = "1.54", features = ["macros", "rt-multi-thread", "time", "sync", "signal", "fs", "io-util", "io-std", "process"] }
+toml = "1"
+toml_edit = "0.25"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wl-nl80211 = "0.8"
+zbus = { version = "6.1", default-features = false, features = ["tokio", "proxy", "service", "object-manager"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

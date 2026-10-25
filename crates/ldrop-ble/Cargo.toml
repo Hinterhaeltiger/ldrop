@@ -1,0 +1,16 @@
+[package]
+name = "ldrop-ble"
+description = "ldrop Bluetooth support: BlueZ probe (advertising and scanning arrive in M2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ldrop-core.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zbus.workspace = true
+
+[lints]
+workspace = true
