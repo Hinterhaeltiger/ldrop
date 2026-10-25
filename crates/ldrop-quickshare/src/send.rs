@@ -8,7 +8,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::channel::{self, Channel, Cmd, Incoming, Role};
 use crate::link::{BoxStream, Link, LocalLinks, Medium};
@@ -20,6 +20,8 @@ use crate::proto::sharing::nearby::{
 use crate::{Error, LocalEndpoint, RejectReason, TextKind, finish_session, frames};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+/// How long the receiver gets to store the files and hang up after the last chunk.
+const RECEIVER_DONE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct OutgoingFile {
@@ -225,8 +227,39 @@ async fn run(ch: &mut Channel, outgoing: Outgoing, events: &mpsc::Sender<Outboun
         }
     }
     report(done, true);
+    wait_for_receiver(ch).await?;
     ch.close().await?;
     Ok(SendOutcome::Completed)
+}
+
+/// Waits for the receiver to hang up, which it does once it has stored everything. Hanging up
+/// first races its last writes: Android then reports the transfer as failed on its side while
+/// ours looks complete (seen with a Galaxy S26). A cancel in the meantime means it failed.
+async fn wait_for_receiver(ch: &mut Channel) -> Result<(), Error> {
+    let wait = async {
+        loop {
+            match ch.recv().await {
+                Ok(Incoming::Bytes { data, .. }) => {
+                    let v1 = channel::decode_sharing(&data)?;
+                    if v1.r#type() == sharing::v1_frame::FrameType::Cancel {
+                        return Err(Error::PeerCancelled);
+                    }
+                    debug!(frame = ?v1.r#type(), "ignoring sharing frame after the last chunk");
+                }
+                Ok(Incoming::Disconnected) | Err(Error::Closed) => return Ok(()),
+                Ok(Incoming::PayloadCancelled) => return Err(Error::PeerCancelled),
+                Ok(Incoming::FileChunk { .. }) => return Err(Error::protocol("receiver sent file data")),
+                Err(e) => return Err(e),
+            }
+        }
+    };
+    match tokio::time::timeout(RECEIVER_DONE_TIMEOUT, wait).await {
+        Ok(result) => result,
+        Err(_) => {
+            warn!("the receiver did not hang up after the last chunk; closing");
+            Ok(())
+        }
+    }
 }
 
 /// Queues `frame` while watching for the receiver cancelling.
