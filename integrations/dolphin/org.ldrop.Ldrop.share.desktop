@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Service
+MimeType=all/allfiles;
+Actions=send;
+X-KDE-Priority=TopLevel
+
+[Desktop Action send]
+Name=Send with ldrop
+Icon=document-share
+Exec=ldrop-gui --share %F

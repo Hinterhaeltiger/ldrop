@@ -162,6 +162,21 @@ const QUICKSHARE_MEDIUMS: [Medium; 4] = [Medium::Lan, Medium::Wfd, Medium::Hotsp
 /// Longest Everyone window accepted; Android caps it at 10 min, ldrop allows up to a day.
 pub const MAX_VISIBILITY_TIMEOUT_SECS: u32 = 86_400;
 
+/// Keys ldropd reads only at startup; changing them takes a restart.
+pub const RESTART_KEYS: &[&str] = &["quickshare.enabled", "quickshare.tcp_port", "quickshare.mediums"];
+
+impl Config {
+    /// The [`RESTART_KEYS`] whose values differ between `self` and `other`.
+    pub fn restart_changes(&self, other: &Config) -> Vec<&'static str> {
+        let (a, b) = (&self.quickshare, &other.quickshare);
+        [a.enabled != b.enabled, a.tcp_port != b.tcp_port, a.mediums != b.mediums]
+            .into_iter()
+            .zip(RESTART_KEYS)
+            .filter_map(|(changed, key)| changed.then_some(*key))
+            .collect()
+    }
+}
+
 impl Config {
     pub fn validate(&self) -> Result<(), ConfigError> {
         let invalid =

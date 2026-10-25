@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! `ldrop-gui`: the desktop side of ldrop (SPEC §11.4). For now the tray icon with the
-//! visibility switch, Accept/Decline notifications for incoming transfers, and progress
-//! notifications; the Kirigami window comes later.
+//! `ldrop-gui`: the desktop side of ldrop (SPEC §11.4): the tray icon with the visibility
+//! switch, Accept/Decline notifications for incoming transfers, progress notifications, and
+//! the share sheet that file managers open. The main window comes later.
 
 mod app;
 mod notify;
 mod progress;
+mod share;
 mod tray;
 
 use std::io::IsTerminal;
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
+use ldrop_core::uri::file_uri_to_path;
 use tracing_subscriber::EnvFilter;
 use zbus::Connection;
 use zbus::fdo::{RequestNameFlags, RequestNameReply};
@@ -32,10 +34,12 @@ struct Args {
     /// takes its place in the system tray.
     #[arg(long)]
     tray_icon: bool,
+    /// Open the share sheet to send these files (paths or file:// URIs) to a nearby device.
+    #[arg(long, num_args = 1.., value_name = "FILE")]
+    share: Vec<String>,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_env("LDROP_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
@@ -43,6 +47,29 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .with_ansi(std::io::stderr().is_terminal())
         .init();
+    if !args.share.is_empty() {
+        let files = share_paths(&args.share)?;
+        std::process::exit(share::run(files));
+    }
+    tokio::runtime::Runtime::new().context("cannot start the async runtime")?.block_on(tray(args))
+}
+
+/// Local files from file manager arguments; everything sent must exist and be a regular file.
+fn share_paths(args: &[String]) -> anyhow::Result<Vec<PathBuf>> {
+    args.iter()
+        .map(|arg| {
+            let path = match arg.strip_prefix("file:") {
+                Some(_) => file_uri_to_path(arg).with_context(|| format!("not a local file: {arg}"))?,
+                None => PathBuf::from(arg),
+            };
+            let path = std::path::absolute(&path).with_context(|| format!("bad path: {arg}"))?;
+            anyhow::ensure!(path.is_file(), "{} is not a file", path.display());
+            Ok(path)
+        })
+        .collect()
+}
+
+async fn tray(args: Args) -> anyhow::Result<()> {
     let conn = Connection::session().await.context("cannot connect to the session bus")?;
     match conn.request_name_with_flags(GUI_NAME, RequestNameFlags::DO_NOT_QUEUE).await {
         Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Action
+Name=Send with ldrop
+Tooltip=Send to a nearby phone or computer
+Icon=document-share
+Profiles=files;
+
+[X-Action-Profile files]
+MimeTypes=all/allfiles;
+SelectionCount=>0
+Exec=ldrop-gui --share %F

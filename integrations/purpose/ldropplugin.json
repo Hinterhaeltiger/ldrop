@@ -1,0 +1,11 @@
+{
+    "KPlugin": {
+        "Description": "Send to a nearby phone or computer with Quick Share or AirDrop",
+        "Icon": "document-share",
+        "License": "GPL-3.0-or-later",
+        "Name": "Send with ldrop"
+    },
+    "X-Purpose-ActionDisplay": "Send with ldrop…",
+    "X-Purpose-InboundArguments": [ "urls" ],
+    "X-Purpose-PluginTypes": [ "Export" ]
+}

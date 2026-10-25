@@ -13,14 +13,23 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+cxx.workspace = true
+cxx-qt.workspace = true
+cxx-qt-lib.workspace = true
 futures-util.workspace = true
 ldrop-client.workspace = true
 ldrop-core.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 zbus.workspace = true
 
-[lints]
-workspace = true
+[build-dependencies]
+cxx-qt-build.workspace = true
+
+# Not the workspace's `forbid`: the generated cxx-qt bridge needs unsafe, allowed for that
+# module only (src/share/mod.rs).
+[lints.rust]
+unsafe_code = "deny"

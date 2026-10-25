@@ -444,7 +444,7 @@ There is no auto-accept flag, by design.
 Additional commands:
 ```
 ldrop tui                     # alias for ldrop-tui
-ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   # per-user installs where no system drop-in exists
+ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   # per-user installs where no system drop-in exists (implemented: thunar)
 ```
 
 ### 11.3 TUI (`ldrop-tui`)
@@ -526,6 +526,8 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
 
 *Plasma applet.* On Plasma, a native system-tray applet (`packaging/plasma/org.ldrop.visibility`, plain QML on `org.kde.plasma.workspace.dbus`, no compiled code) replaces the SNI icon: its popup is anchored to the tray like the Bluetooth and Network applets and offers Hidden / Everyone for 10 minutes with a live countdown, plus the download folder. `X-Plasma-DBusActivationService: org.ldrop.Ldrop1` makes the tray load it only while ldropd runs. `ldrop-gui` skips its own SNI icon in a Plasma session when the applet is installed (`--tray-icon` overrides) and keeps handling notifications.
 
+*Share sheet (M4, first window).* `ldrop-gui --share FILE…|URI…` runs the sheet in its own process: a `QApplication` plus `QQmlApplicationEngine` (`src/share/app.cpp`), the Kirigami page in `qml/ShareSheet.qml`, and one cxx-qt QObject (`src/share/bridge.rs`) whose device rows cross as a JSON string. Discovery and sends run on a tokio runtime in a second thread and post updates with `CxxQtThread::queue`. It does not forward to the tray process over `org.ldrop.Gui1` yet; each share opens its own sheet, and closing it leaves started transfers running in ldropd. The style rule of §11.5 is applied in `app.cpp`: `org.kde.desktop` only off Plasma and when neither `QT_QUICK_CONTROLS_STYLE` nor `QT_QPA_PLATFORMTHEME` is set.
+
 **Accessibility & i18n.**
 - Full keyboard navigation.
 - `Accessible.name` on every control (AT-SPI).
@@ -571,12 +573,12 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
 ### 11.6 Desktop integrations
 | Integration | Mechanism | Installed file(s) |
 |---|---|---|
-| Dolphin "Send with ldrop" | KIO service menu [K9] | `share/kio/servicemenus/org.ldrop.Ldrop.desktop` → `ldrop-gui --share %F` |
+| Dolphin "Send with ldrop" | KIO service menu [K9] | `share/kio/servicemenus/org.ldrop.Ldrop.share.desktop` → `ldrop-gui --share %F` |
 | Nautilus | nautilus-python `MenuProvider` extension [K11] | `share/nautilus-python/extensions/ldrop.py` (package `ldrop-nautilus`) |
 | Nemo | Nemo action [K11] | `share/nemo/actions/ldrop.nemo_action` |
 | Caja, PCManFM-Qt | file-manager actions `.desktop` (DES-EMA) [K11], support per file manager verified in S0.7 | `share/file-manager/actions/ldrop.desktop` |
 | Thunar | custom action in per-user `~/.config/Thunar/uca.xml` [K11] (no system drop-in) | `ldrop integrate thunar` adds/removes it, with a backup |
-| KDE share menu | Purpose plugin [K10]: a small C++ plugin calling `org.ldrop.Gui1.Share` | `integrations/purpose/` (CMake) → KF6 Purpose plugin dir |
+| KDE share menu | Purpose plugin [K10]: a small C++ plugin that starts `ldrop-gui --share` (later: `org.ldrop.Gui1.Share`) | `integrations/purpose/` (CMake) → KF6 Purpose plugin dir |
 | "Open with…" | `.desktop`, `Exec=ldrop-gui --share %U`, MimeType `application/octet-stream` + common types; never sets itself as default handler | `share/applications/org.ldrop.Ldrop.desktop` |
 | Tray | KStatusNotifierItem / SNI [K8]; on Plasma a system-tray applet | in-app; `share/plasma/plasmoids/org.ldrop.visibility/` |
 | Autostart (opt-in) | XDG autostart `ldrop-gui --tray` | written to `~/.config/autostart/` only when enabled |

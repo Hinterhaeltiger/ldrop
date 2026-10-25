@@ -217,7 +217,12 @@ pub fn config_get(key: Option<&str>) -> CmdResult {
 pub fn config_set(key: &str, value: &str) -> CmdResult {
     let paths = Paths::from_env();
     match config::set(&paths.config_file, key, value) {
-        Ok(_) => Ok(Exit::Ok),
+        Ok(_) => {
+            if config::RESTART_KEYS.contains(&key) {
+                eprintln!("ldrop: {key} takes effect after restarting ldropd: systemctl --user restart ldropd");
+            }
+            Ok(Exit::Ok)
+        }
         Err(e @ config::ConfigError::UnknownKey(_)) => Err(Fail::new(Exit::Usage, e.to_string())),
         Err(e) => Err(e.into()),
     }

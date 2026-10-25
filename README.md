@@ -13,20 +13,25 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - `ldrop` command;
   - `ldrop-tui` terminal interface;
   - `ldrop-gui` for the tray and desktop notifications (Accept/Decline, progress);
+  - a share sheet window, opened from file managers ("Send with ldrop") and the KDE Share menu;
   - a Plasma system-tray applet.
-- **Not yet:** AirDrop, Wi-Fi Direct hosting, and the GUI window.
+- **Not yet:** AirDrop, Wi-Fi Direct hosting, and the main GUI window.
 
 ## Requirements
 
-- **To build:** Rust 1.89+, `protoc`, and a C toolchain.
-  - Arch: `rust protobuf base-devel`.
-  - Debian/Ubuntu: `cargo protobuf-compiler build-essential`.
+- **To build:** Rust 1.89+, `protoc`, a C++ toolchain, and Qt 6 (for `ldrop-gui`).
+  - Arch: `rust protobuf base-devel qt6-declarative`.
+  - Debian/Ubuntu: `cargo protobuf-compiler build-essential qt6-declarative-dev
+    qt6-base-dev`.
+  - The KDE Share menu plugin also needs CMake and KDE Frameworks' Purpose: Arch `cmake
+    purpose`; Debian/Ubuntu `cmake libkf6purpose-dev`.
 - **To run:**
   - a D-Bus session;
   - BlueZ with a powered adapter, for Bluetooth;
   - NetworkManager, for Wi-Fi switching (plus dnsmasq for hosting a hotspot);
-  - a notification server, for the tray prompts.
-  - Optional: Plasma 6 for the tray applet.
+  - a notification server, for the tray prompts;
+  - Kirigami, for the share sheet (Arch `kirigami`, Debian/Ubuntu `qml6-module-org-kde-kirigami`).
+  - Optional: Plasma 6, for the tray applet.
 
 ## Build
 
@@ -101,7 +106,29 @@ systemctl --user daemon-reload
    kpackagetool6 -t Plasma/Applet -i packaging/plasma/org.ldrop.visibility   # -u to update, -r org.ldrop.visibility to remove
    systemctl --user restart plasma-plasmashell                                # or log in again
    ```
-5. **Check the hardware.** `ldrop doctor` shows which transports this machine supports, and why
+5. **"Send with ldrop" in your file manager.** Copy the entry for yours (for all users, use
+   `/usr/share/…` instead of `~/.local/share/…`):
+
+   ```sh
+   # Dolphin (per-user service menus must be executable)
+   install -Dm755 integrations/dolphin/org.ldrop.Ldrop.share.desktop -t ~/.local/share/kio/servicemenus/
+   # Nautilus (needs nautilus-python), then: nautilus -q
+   install -Dm644 integrations/nautilus/ldrop.py -t ~/.local/share/nautilus-python/extensions/
+   # Nemo
+   install -Dm644 integrations/nemo/ldrop.nemo_action -t ~/.local/share/nemo/actions/
+   # Caja (with caja-actions) and PCManFM-Qt
+   install -Dm644 integrations/file-manager-actions/ldrop.desktop -t ~/.local/share/file-manager/actions/
+   # Thunar keeps custom actions in ~/.config/Thunar/uca.xml; this adds ours (--remove takes it out)
+   ldrop integrate thunar
+   ```
+6. **KDE Share menu.** This puts ldrop in the Share menu of Dolphin, Gwenview, Spectacle and
+   other KDE apps. It is a small Qt plugin, installed next to KDE's own:
+
+   ```sh
+   cmake -S integrations/purpose -B build/purpose -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release
+   cmake --build build/purpose && sudo cmake --install build/purpose
+   ```
+7. **Check the hardware.** `ldrop doctor` shows which transports this machine supports, and why
    others are missing.
 
 ## Use
@@ -206,6 +233,21 @@ Only one `ldrop-gui` runs per session. The prompts need a notification server wi
 all desktops have one, and on window managers mako, dunst or swaync do. Without one,
 `ldrop-gui` leaves prompts to another frontend.
 
+## Share sheet
+
+`ldrop-gui --share FILE…` opens a window for sending, which is what the file manager entries and
+the KDE Share menu call:
+
+- Nearby devices appear as they are found, with their platform and protocol.
+- **Send** starts the transfer. The row then shows the PIN to compare with the phone, waits for
+  them to accept, and shows the progress, with **Cancel**.
+- At the end, the row shows *Sent*, *Declined* or the reason it failed (**Retry** sends again).
+- You can send to several devices from one sheet. Closing the window does not stop transfers
+  that already started; `ldrop transfers` or the tray still show them.
+
+The sheet uses the desktop's Qt style: Breeze (or Union) on Plasma, and qqc2-desktop-style
+elsewhere when no platform theme is set.
+
 ## Development
 
 Try the frontends without phones: `--dev-sim` adds the simulated devices "Sim Pixel" and
@@ -237,7 +279,8 @@ name. The design and milestones are in [SPEC.md](SPEC.md).
 | `crates/ldrop-client` | Client library for frontends: proxies, discovery, transfers, Agent |
 | `crates/ldrop-cli` | `ldrop` command |
 | `crates/ldrop-tui` | `ldrop-tui` terminal interface |
-| `crates/ldrop-gui` | `ldrop-gui` tray icon and notifications |
+| `crates/ldrop-gui` | `ldrop-gui`: tray icon, notifications, share sheet (Rust + cxx-qt, QML in `qml/`) |
+| `integrations/` | File manager entries (Dolphin, Nautilus, Nemo, Caja, PCManFM-Qt) and the KDE Share menu plugin |
 | `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)) |
 | `packaging/` | systemd user unit, D-Bus activation file, desktop entry, Plasma tray applet, API introspection XML |
 

@@ -1,0 +1,7 @@
+[Nemo Action]
+Name=Send with ldrop
+Comment=Send to a nearby phone or computer
+Exec=ldrop-gui --share %F
+Icon-Name=document-share
+Selection=notnone
+Extensions=nodirs;

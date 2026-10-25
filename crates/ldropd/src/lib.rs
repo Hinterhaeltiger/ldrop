@@ -167,12 +167,19 @@ async fn watch_config(s: Arc<Shared>) {
                 for w in &loaded.warnings {
                     tracing::warn!("{w}");
                 }
-                let (name, dir) = {
+                let (name, dir, restart) = {
                     let mut st = s.state();
                     let old = std::mem::replace(&mut st.config, loaded.config);
-                    (old.device_name != st.config.device_name, old.download_dir != st.config.download_dir)
+                    (
+                        old.device_name != st.config.device_name,
+                        old.download_dir != st.config.download_dir,
+                        old.restart_changes(&st.config),
+                    )
                 };
                 tracing::info!("reloaded {}", path.display());
+                if !restart.is_empty() {
+                    tracing::warn!("{} take effect after restarting ldropd", restart.join(", "));
+                }
                 manager::emit_config_props(&s, name, dir).await;
             }
             Err(e) => tracing::error!("{e}; keeping the previous config"),
