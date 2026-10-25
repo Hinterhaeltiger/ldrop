@@ -44,6 +44,8 @@ pub(crate) trait Adapter1 {
     fn start_discovery(&self) -> zbus::Result<()>;
     fn stop_discovery(&self) -> zbus::Result<()>;
     fn set_discovery_filter(&self, filter: HashMap<&str, Variant<'_>>) -> zbus::Result<()>;
+    /// Experimental: BlueZ needs `Experimental = true` in main.conf (or `--experimental`).
+    fn connect_device(&self, properties: HashMap<&str, Variant<'_>>) -> zbus::Result<OwnedObjectPath>;
 
     #[zbus(property)]
     fn name(&self) -> zbus::Result<String>;
@@ -67,6 +69,9 @@ pub(crate) trait Adapter1 {
 pub(crate) trait Device1 {
     fn connect_profile(&self, uuid: &str) -> zbus::Result<()>;
     fn disconnect_profile(&self, uuid: &str) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn address(&self) -> zbus::Result<String>;
 }
 
 /// A BlueZ adapter (`/org/bluez/hciN`) and the system bus connection used to drive it.
@@ -123,6 +128,28 @@ impl Adapter {
         let proxy =
             Device1Proxy::builder(&self.conn).path(path.clone()).cache_properties(CacheProperties::No).build().await?;
         Ok((path, proxy))
+    }
+
+    /// Makes sure BlueZ has a device object for the Bluetooth classic `address`. It has none
+    /// for a device only known from a BLE advertisement (which names its classic address but
+    /// is sent from another one), and then the link is set up with `ConnectDevice`.
+    pub(crate) async fn ensure_device(&self, address: &str) -> Result<()> {
+        let (_, device) = self.device(address).await?;
+        if device.address().await.is_ok() {
+            return Ok(());
+        }
+        // Without an address type BlueZ creates a BR/EDR device.
+        let properties = HashMap::from([("Address", Variant::from(address))]);
+        match self.proxy().await?.connect_device(properties).await {
+            Ok(_) => Ok(()),
+            Err(zbus::Error::MethodError(name, ..)) if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod" => {
+                Err(Error::Failed(format!(
+                    "BlueZ does not know {address}; enable Experimental = true in /etc/bluetooth/main.conf to reach it"
+                )))
+            }
+            Err(zbus::Error::MethodError(name, ..)) if name.as_str() == "org.bluez.Error.AlreadyExists" => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 

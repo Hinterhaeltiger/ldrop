@@ -41,6 +41,10 @@ const WEB_SAFE: GeneralPurpose = GeneralPurpose::new(
 pub struct Advertised {
     pub id: EndpointId,
     pub info: EndpointInfo,
+    /// The Bluetooth classic address to connect to, as `AA:BB:CC:DD:EE:FF`, when a BLE
+    /// advertisement names one. Phones advertise over BLE from a random address and take
+    /// RFCOMM connections on their public one.
+    pub bluetooth_address: Option<String>,
 }
 
 /// Endpoint info that fits [`MAX_INFO_LEN`], shortening the name if needed.
@@ -80,7 +84,7 @@ pub fn parse_device_name(name: &str) -> Option<Advertised> {
     let id = EndpointId::from_bytes(raw[1..5].try_into().ok()?)?;
     let len = usize::from(raw[NAME_HEADER_LEN - 1]);
     let info = raw.get(NAME_HEADER_LEN..NAME_HEADER_LEN + len)?;
-    Some(Advertised { id, info: EndpointInfo::decode(info).ok()? })
+    Some(Advertised { id, info: EndpointInfo::decode(info).ok()?, bluetooth_address: None })
 }
 
 /// Splits `n` bytes off the front.
@@ -131,7 +135,14 @@ fn parse_connections_advertisement(mut rest: &[u8], fast: bool) -> Option<Advert
     if info.len() < 1 + OPAQUE_LEN || info.len() > MAX_INFO_LEN {
         return None;
     }
-    Some(Advertised { id, info: EndpointInfo::decode(info).ok()? })
+    let info = EndpointInfo::decode(info).ok()?;
+    // Then the Bluetooth address (regular advertisements only), all zeros when unknown.
+    let bluetooth_address = if fast { None } else { take(&mut rest, 6).and_then(format_address) };
+    Some(Advertised { id, info, bluetooth_address })
+}
+
+fn format_address(raw: &[u8]) -> Option<String> {
+    (raw.iter().any(|&b| b != 0)).then(|| raw.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":"))
 }
 
 #[cfg(test)]
@@ -200,11 +211,19 @@ mod tests {
         data.extend_from_slice(b"WXYZ");
         data.push(info.len() as u8);
         data.extend_from_slice(&info);
-        data.extend([0xaa; 6]); // Bluetooth address
+        let header = data.len();
+        data.extend([0x0a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f]); // Bluetooth address
         data.extend([0, 0]); // no UWB address, no extra fields
         let parsed = parse_ble_advertisement(&medium(false, &data)).unwrap();
         assert_eq!(parsed.id.as_str(), "WXYZ");
         assert_eq!(parsed.info.name.as_deref(), Some("Pixel 9"));
+        assert_eq!(parsed.bluetooth_address.as_deref(), Some("0A:1B:2C:3D:4E:5F"));
+
+        // An unknown address is all zeros, and older senders leave it out.
+        data[header..header + 6].fill(0);
+        assert_eq!(parse_ble_advertisement(&medium(false, &data)).unwrap().bluetooth_address, None);
+        data.truncate(header);
+        assert_eq!(parse_ble_advertisement(&medium(false, &data)).unwrap().bluetooth_address, None);
     }
 
     #[test]

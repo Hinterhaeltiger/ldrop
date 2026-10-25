@@ -184,6 +184,7 @@ impl Rfcomm {
     /// Connects to the service on `address`. The device must be known to BlueZ, which it is
     /// while discovery reports it.
     pub async fn connect(&self, address: &str) -> Result<RfcommStream> {
+        self.adapter.ensure_device(address).await?;
         let (path, device) = self.adapter.device(address).await?;
         let (tx, rx) = oneshot::channel();
         let routes = self.routes.clone();

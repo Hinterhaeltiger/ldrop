@@ -21,6 +21,9 @@ trait AdvertisingManager {
     fn unregister_advertisement(&self, advertisement: &ObjectPath<'_>) -> zbus::Result<()>;
 }
 
+/// BlueZ's default is about 1.28 s.
+const INTERVAL_MS: u32 = 100;
+
 struct AdvertisementIface {
     service_uuid: String,
     data: Vec<u8>,
@@ -36,6 +39,19 @@ impl AdvertisementIface {
     #[zbus(property, name = "Type")]
     fn kind(&self) -> &str {
         "broadcast"
+    }
+
+    /// Advertise as often as BLE allows a sender to, like Android's low-latency mode: phones
+    /// scan in short windows while their screen is off, and miss a slow advertisement for
+    /// tens of seconds. Milliseconds; BlueZ before 5.62 ignores both.
+    #[zbus(property)]
+    fn min_interval(&self) -> u32 {
+        INTERVAL_MS
+    }
+
+    #[zbus(property)]
+    fn max_interval(&self) -> u32 {
+        INTERVAL_MS
     }
 
     #[zbus(property)]

@@ -2,8 +2,8 @@
 //! Quick Share over Bluetooth classic (SPEC §5.2), the way Nearby runs on Linux and ChromeOS:
 //! while visible, the adapter takes the encoded device name and turns discoverable, and a
 //! legacy BLE advertisement makes Android phones look for it; an RFCOMM service takes their
-//! connections. Discovery reads the names of Quick Share devices nearby, and sending connects
-//! to their RFCOMM service.
+//! connections. Discovery reads the names of Quick Share computers nearby and the BLE
+//! advertisements of Quick Share phones, and sending connects to their RFCOMM service.
 //!
 //! Slow (RFCOMM manages about 100–200 KB/s), but it needs no shared network.
 
@@ -15,7 +15,8 @@ use ldrop_ble::Advertisement;
 use ldrop_bt::{Adapter, Incoming, Rfcomm, Seen, Visible};
 use ldrop_quickshare::Medium as QsMedium;
 use ldrop_quickshare::bluetooth::{
-    COPRESENCE_SERVICE_UUID, LEGACY_WAKE_DATA, RFCOMM_SERVICE_UUID, device_name, parse_device_name,
+    Advertised, COPRESENCE_SERVICE_UUID, LEGACY_WAKE_DATA, RFCOMM_SERVICE_UUID, device_name, parse_ble_advertisement,
+    parse_device_name,
 };
 use ldrop_quickshare::{EndpointId, EndpointInfo};
 use tokio::net::UnixStream;
@@ -145,11 +146,11 @@ impl Bluetooth {
                 event = scan.next() => event,
             };
             match event {
-                Some(Seen::Device { address, name, .. }) => {
-                    let advertised =
-                        name.as_deref().and_then(parse_device_name).filter(|a| qs.own_endpoint() != Some(a.id));
+                Some(Seen::Device { address, name, service_data }) => {
+                    let advertised = quick_share_device(&address, name.as_deref(), &service_data)
+                        .filter(|(a, _)| qs.own_endpoint() != Some(a.id));
                     match advertised {
-                        Some(advertised) => {
+                        Some((advertised, classic)) => {
                             let id = device_id(advertised.id);
                             // A new visibility session on the phone means a new endpoint ID.
                             if let Some(old) = seen.insert(address.clone(), id.clone())
@@ -159,11 +160,11 @@ impl Bluetooth {
                             }
                             if !qs.inner().peers.contains_key(&id) {
                                 tracing::debug!(
-                                    "Quick Share: found {:?} over Bluetooth at {address}",
+                                    "Quick Share: found {:?} over Bluetooth at {classic} (seen at {address})",
                                     advertised.info.name
                                 );
                             }
-                            found(s, qs, advertised.id, &advertised.info, |route| route.bt = Some(address)).await;
+                            found(s, qs, advertised.id, &advertised.info, |route| route.bt = Some(classic)).await;
                         }
                         // The phone took its own name back: it is no longer visible.
                         None => {
@@ -201,6 +202,30 @@ impl Bluetooth {
         rfcomm.connect(address).await.map(|conn| conn.stream).map_err(|e| e.to_string())
     }
 }
+
+/// A Quick Share device in a discovery sighting, and the Bluetooth classic address its
+/// RFCOMM service listens on.
+///
+/// Computers announce themselves the legacy way, with an encoded device name, at that very
+/// address. Android phones advertise over BLE (Copresence service data), from a random
+/// address, naming their classic address inside; such a phone is not discoverable over
+/// classic at all. Advertisements without a classic address (fast ones, from hidden
+/// devices) cannot be reached and are skipped.
+fn quick_share_device(
+    address: &str,
+    name: Option<&str>,
+    service_data: &HashMap<String, Vec<u8>>,
+) -> Option<(Advertised, String)> {
+    if let Some(advertised) = name.and_then(parse_device_name) {
+        return Some((advertised, address.to_owned()));
+    }
+    let advertised = parse_ble_advertisement(service_data.get(COPRESENCE_UUID)?)?;
+    let classic = advertised.bluetooth_address.clone()?;
+    Some((advertised, classic))
+}
+
+/// [`COPRESENCE_SERVICE_UUID`] as BlueZ names it in `ServiceData`.
+const COPRESENCE_UUID: &str = "0000fef3-0000-1000-8000-00805f9b34fb";
 
 async fn accept_loop(s: Arc<Shared>, mut incoming: Incoming, stop: CancellationToken) {
     loop {

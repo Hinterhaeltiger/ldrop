@@ -130,8 +130,14 @@ it on). It is slow, about 100–200 KB/s, so it suits photos and documents more 
   - sends a short BLE advertisement so Android phones start looking.
 
   Hiding puts the old name and visibility back. After a crash, the next start does.
-- *Sending:* `ldrop devices` also lists phones that are visible over Bluetooth. ldrop uses the
-  LAN when the device is there too, and Bluetooth otherwise.
+- *Sending:* `ldrop devices` also lists phones that are visible over Bluetooth, found from
+  their BLE advertisements, so a computer without Wi-Fi finds them too. ldrop uses the LAN
+  when the device is there too, and Bluetooth otherwise.
+  - On the phone, open Quick Share and set it to *Everyone*, with the screen on. Phones that
+    are visible to contacts only don't say where to connect, so ldrop can't list them.
+  - A phone found only over BLE is reached at the Bluetooth address it advertises, which
+    needs BlueZ's experimental `ConnectDevice`: set `Experimental = true` under `[General]`
+    in `/etc/bluetooth/main.conf` and restart `bluetooth.service`.
 - *Faster after the start:* once a transfer over 1 MB is accepted, the connection moves from
   Bluetooth to Wi-Fi if it can.
   - If both are on the same network, that happens on its own.
