@@ -238,6 +238,10 @@ Port from **rquickshare `core_lib`** (Rust, GPL-3.0; LAN + BLE wake only) [R42].
 - **Sending on LAN:** browse that type and decode it.
 - **BLE wake (sending):** service UUID `0xFE2C`, service data `fc 12 8e 01 42 00 00 00 00 00 00 00 00 00` followed by 10 random bytes. Send it periodically while searching [R43]. It makes Android receivers in Everyone mode publish mDNS.
 - **Peer-to-peer BLE discovery** (no shared LAN): the Nearby Connections BLE advertising format comes from google/nearby [R44] (*S0.4*).
+- **Bluetooth classic** (no shared LAN, implemented as Nearby does it on Linux/ChromeOS; formats in `docs/research/quickshare-upgrade.md` §1):
+  - *Receiving:* while visible, the adapter's alias becomes the encoded device name (web-safe base64 of `0x23 | endpoint_id | FC 9F 5E | flags | 6 × 00 | len | endpoint info`) and the adapter turns discoverable with no timeout. An RFCOMM service under UUID `a82efa21-ae5c-3dde-9bbc-f16da7b16c5a` (BlueZ `ProfileManager1`, no pairing or authorization) takes connections. A legacy BLE advertisement (service data `0xFEF3` = `QCAAABACAAADAAAAAAAAAAA`) makes Android resume its paused classic scan. The previous alias and discoverability go to `$XDG_STATE_HOME/ldrop/bt-adapter.json` first and are put back when hidden, at exit, or on the next start after a crash.
+  - *Sending:* a BlueZ scan (classic + LE) reads device names; names that decode as Quick Share devices are listed (medium `bt`), merged by endpoint ID with the same device found over mDNS. Sending prefers the LAN and falls back to RFCOMM (`Device1.ConnectProfile`).
+  - *Implementation note (M5):* the endpoint is announced on Bluetooth with the same endpoint ID as on mDNS. Phones are found from their classic names only; parsing their BLE advertisements is implemented but not yet used for discovery (the classic MAC is needed to connect). Transfers stay on Bluetooth until the Wi-Fi upgrade (§5.4) lands.
 - **QR mode:** see §5.6.
 
 ### 5.3 Connection & handshake [R43]
@@ -511,6 +515,8 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
    - Left click opens the main window.
    - With no SNI host (GNOME without the AppIndicator extension), the app works through the window and notifications alone.
 5. **Completion notification:** "Received 3 files from Pixel 9 Pro", with actions **Open** and **Show in folder**.
+
+*Implementation note (M4, tray first).* The tray and the notifications are implemented in Rust directly over D-Bus instead of through KStatusNotifierItem/KNotification: `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` for the tray, `org.freedesktop.Notifications` for prompts and completion, and `org.kde.JobViewServerV2` for progress on Plasma (a progress notification elsewhere). The shell renders all of them natively, so the user sees the same thing, and the background part needs no Qt. Until the window exists, the menu offers Hidden / Visible to everyone, Open download folder and Quit; middle-click toggles visibility.
 
 **Accessibility & i18n.**
 - Full keyboard navigation.

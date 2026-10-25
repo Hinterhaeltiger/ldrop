@@ -16,11 +16,11 @@ use crate::Error;
 pub const MDNS_SERVICE_TYPE: &str = "_FC9F5ED42C8A._tcp.local.";
 
 /// First 3 bytes of SHA-256("NearbySharing").
-const SERVICE_ID_HASH: [u8; 3] = [0xFC, 0x9F, 0x5E];
+pub(crate) const SERVICE_ID_HASH: [u8; 3] = [0xFC, 0x9F, 0x5E];
 /// First byte of the mDNS instance name ("PCP" in Google's code).
-const PCP: u8 = 0x23;
+pub(crate) const PCP: u8 = 0x23;
 /// Salt + encrypted metadata key: meaningless without Google's servers, random is accepted.
-const OPAQUE_LEN: usize = 16;
+pub(crate) const OPAQUE_LEN: usize = 16;
 const TLV_QR_CODE: u8 = 1;
 const TLV_VENDOR: u8 = 2;
 pub const VENDOR_SAMSUNG: u8 = 1;
@@ -194,7 +194,7 @@ pub fn parse_mdns_instance_name(name: &str) -> Option<EndpointId> {
     EndpointId::from_bytes(raw[1..5].try_into().ok()?)
 }
 
-fn truncate_utf8(s: &str, max: usize) -> &str {
+pub(crate) fn truncate_utf8(s: &str, max: usize) -> &str {
     if s.len() <= max {
         return s;
     }

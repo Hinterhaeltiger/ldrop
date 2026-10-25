@@ -13,6 +13,7 @@ futures-util.workspace = true
 mime_guess.workspace = true
 nix.workspace = true
 ldrop-ble.workspace = true
+ldrop-bt.workspace = true
 ldrop-core.workspace = true
 ldrop-mdns.workspace = true
 ldrop-quickshare.workspace = true

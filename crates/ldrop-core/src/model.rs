@@ -246,6 +246,18 @@ pub fn describe_items(items: &[Item]) -> String {
     }
 }
 
+/// Summary and body of an accept prompt (SPEC §1.3): "Pixel 9 wants to share 3 files", then
+/// the PIN (if any) and the first item with the total size.
+pub fn prompt_text(peer: &str, items: &[Item], bytes_total: u64, pin: &str) -> (String, String) {
+    let peer = if peer.is_empty() { "A nearby device" } else { peer };
+    let summary = format!("{peer} wants to share {}", describe_items(items));
+    let mut body = format!("{} · {}", items.first().map(|i| i.name.as_str()).unwrap_or(""), format_size(bytes_total));
+    if !pin.is_empty() {
+        body = format!("PIN {pin}\n{body}");
+    }
+    (summary, body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

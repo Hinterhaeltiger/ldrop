@@ -76,5 +76,14 @@ Without a notification daemon, answer in a terminal with `ldrop receive`, or lat
 
 ## Tray
 
-A tray icon for any StatusNotifierItem host (such as Waybar's `tray` module) comes with the
-GUI, `ldrop-gui --tray`, in milestone M4.
+`ldrop-gui` shows a tray icon in any StatusNotifierItem host, such as Waybar's `tray`
+module, and posts the Accept/Decline and progress notifications through your notification
+daemon. Start it from your compositor config:
+
+```sh
+exec ldrop-gui            # sway, i3
+exec-once = ldrop-gui     # Hyprland
+```
+
+The menu switches visibility and opens the download folder; middle-click toggles visibility.
+Without an SNI host, `ldrop-gui` still handles the notifications.

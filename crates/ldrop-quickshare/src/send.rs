@@ -10,7 +10,8 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-use crate::channel::{self, Channel, Cmd, Incoming};
+use crate::channel::{self, Channel, Cmd, Incoming, Role};
+use crate::link::{BoxStream, Link, LocalLinks, Medium};
 use crate::proto::location::nearby::connections::OfflineFrame;
 use crate::proto::location::nearby::connections::payload_transfer_frame::payload_header::PayloadType;
 use crate::proto::sharing::nearby::{
@@ -18,8 +19,6 @@ use crate::proto::sharing::nearby::{
 };
 use crate::{Error, LocalEndpoint, RejectReason, TextKind, finish_session, frames};
 
-/// File chunk size [R43].
-const CHUNK_LEN: usize = 512 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone)]
@@ -54,8 +53,9 @@ pub enum SendOutcome {
 
 /// Runs a sending session on a connected `stream`.
 pub async fn send<S>(
-    mut stream: S,
+    stream: S,
     local: &LocalEndpoint,
+    link: &Link,
     outgoing: Outgoing,
     events: mpsc::Sender<OutboundEvent>,
     cancel: CancellationToken,
@@ -63,12 +63,18 @@ pub async fn send<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let mut stream: BoxStream = Box::new(stream);
+    // Without an upgrader, list Wi-Fi LAN as M2 did; Nearby never upgrades LAN to LAN.
+    let links = match &link.upgrader {
+        Some(upgrader) => upgrader.local_links(),
+        None => LocalLinks { mediums: vec![Medium::WifiLan], ..Default::default() },
+    };
     let session = tokio::select! {
-        result = channel::client_handshake(&mut stream, local) => result?,
+        result = channel::client_handshake(&mut stream, local, &links) => result?,
         () = cancel.cancelled() => return Err(Error::Cancelled),
     };
     let _ = events.send(OutboundEvent::Pin(session.pin())).await;
-    let mut ch = Channel::spawn(stream, session.sealer, session.opener);
+    let mut ch = Channel::spawn(stream, session, Role::Client { local_id: local.id }, link);
     let result = tokio::select! {
         result = run(&mut ch, outgoing, &events) => result,
         () = cancel.cancelled() => Err(Error::Cancelled),
@@ -201,7 +207,7 @@ async fn run(ch: &mut Channel, outgoing: Outgoing, events: &mpsc::Sender<Outboun
                 let total = size as i64;
                 let mut offset = 0u64;
                 while offset < size {
-                    let want = CHUNK_LEN.min((size - offset) as usize);
+                    let want = ch.chunk_len().min((size - offset) as usize);
                     let mut body = vec![0u8; want];
                     let n = file.read(&mut body).await?;
                     if n == 0 {

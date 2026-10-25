@@ -918,6 +918,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ldrop-bt"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "zbus",
+]
+
+[[package]]
 name = "ldrop-cli"
 version = "0.1.0"
 dependencies = [
@@ -964,6 +978,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ldrop-gui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures-util",
+ "ldrop-client",
+ "ldrop-core",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
+]
+
+[[package]]
 name = "ldrop-mdns"
 version = "0.1.0"
 dependencies = [
@@ -993,6 +1023,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1032,6 +1063,7 @@ dependencies = [
  "clap",
  "futures-util",
  "ldrop-ble",
+ "ldrop-bt",
  "ldrop-client",
  "ldrop-core",
  "ldrop-mdns",

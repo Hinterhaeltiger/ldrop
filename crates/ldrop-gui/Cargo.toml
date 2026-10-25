@@ -1,0 +1,26 @@
+[package]
+name = "ldrop-gui"
+description = "ldrop desktop integration: tray icon and notifications"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ldrop-gui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+ldrop-client.workspace = true
+ldrop-core.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+zbus.workspace = true
+
+[lints]
+workspace = true

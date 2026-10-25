@@ -69,6 +69,7 @@ pub async fn run(opts: Options) -> anyhow::Result<()> {
     }
     tracing::info!("shutting down");
     cancel_transfers(&shared).await;
+    quickshare::shutdown(&shared).await;
     Ok(())
 }
 

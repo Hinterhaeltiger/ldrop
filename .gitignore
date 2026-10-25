@@ -1,1 +1,22 @@
-/target
+/targe
+# Rust build artifacts
+/target/
+
+# Cargo lockfile
+# Uncomment if this is a library and you intentionally don't want to commit Cargo.lock
+# Cargo.lock
+
+# Rust analyzer / IDE
+/.idea/
+/.vscode/
+*.rs.bk
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+

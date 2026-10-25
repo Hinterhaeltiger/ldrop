@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use ldrop_core::dbus::{ItemDict, PeerDict, ROOT_PATH, RequestInfoDict};
+use ldrop_core::prompt_text;
 use ldrop_core::time::remaining;
-use ldrop_core::{describe_items, format_size};
 use tokio::sync::oneshot;
 use zbus::object_server::SignalEmitter;
 use zbus::{ObjectPath, Variant, proxy};
@@ -138,17 +138,10 @@ async fn notify(s: &Shared, info: &RequestInfoDict, time_left: Duration, id_out:
     let mut actions = proxy.receive_action_invoked().await.ok()?;
     let mut closed = proxy.receive_notification_closed().await.ok()?;
 
-    let peer = info.peer.as_ref().and_then(|p| p.name.clone()).unwrap_or_else(|| "A nearby device".into());
+    let peer = info.peer.as_ref().and_then(|p| p.name.clone()).unwrap_or_default();
     let items: Vec<_> = info.items.iter().flatten().map(ldrop_core::Item::from).collect();
-    let summary = format!("{peer} wants to share {}", describe_items(&items));
-    let mut body = format!(
-        "{} · {}",
-        items.first().map(|i| i.name.as_str()).unwrap_or(""),
-        format_size(info.bytes_total.unwrap_or(0))
-    );
-    if let Some(pin) = &info.pin {
-        body = format!("PIN {pin}\n{body}");
-    }
+    let (summary, body) =
+        prompt_text(&peer, &items, info.bytes_total.unwrap_or(0), info.pin.as_deref().unwrap_or_default());
     let hints = HashMap::from([
         ("urgency", Variant::from(2u8)),
         ("category", Variant::from("transfer")),

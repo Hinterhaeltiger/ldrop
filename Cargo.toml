@@ -4,12 +4,14 @@ members = [
     "crates/ldrop-core",
     "crates/ldrop-wifi",
     "crates/ldrop-ble",
+    "crates/ldrop-bt",
     "crates/ldrop-quickshare",
     "crates/ldrop-mdns",
     "crates/ldropd",
     "crates/ldrop-client",
     "crates/ldrop-cli",
     "crates/ldrop-tui",
+    "crates/ldrop-gui",
 ]
 
 [workspace.package]
@@ -23,6 +25,7 @@ repository = "https://example.invalid/ldrop"
 ldrop-core = { path = "crates/ldrop-core" }
 ldrop-wifi = { path = "crates/ldrop-wifi" }
 ldrop-ble = { path = "crates/ldrop-ble" }
+ldrop-bt = { path = "crates/ldrop-bt" }
 ldrop-quickshare = { path = "crates/ldrop-quickshare" }
 ldrop-mdns = { path = "crates/ldrop-mdns" }
 ldrop-client = { path = "crates/ldrop-client" }

@@ -5,9 +5,11 @@
 //! No sockets here: the daemon accepts or connects TCP and hands the stream in, and tests use
 //! in-memory pipes.
 
+pub mod bluetooth;
 pub mod crypto;
 pub mod endpoint;
 pub mod framing;
+pub mod link;
 pub mod receive;
 pub mod send;
 
@@ -25,6 +27,7 @@ use rand::Rng;
 pub use channel::RemoteEndpoint;
 pub use endpoint::{DeviceType, EndpointId, EndpointInfo};
 pub use error::Error;
+pub use link::{Link, Medium};
 use proto::sharing::nearby::{connection_response_frame::Status, text_metadata};
 
 /// 16-bit service UUID of the BLE wake-up advertisement (SPEC §5.2) [R43].

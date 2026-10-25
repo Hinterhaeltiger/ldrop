@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=ldrop
+GenericName=Nearby Share
+Comment=Share files with nearby Android and Apple devices
+Exec=ldrop-gui --tray
+Icon=document-share
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=Quick Share;AirDrop;Nearby;Share;
+StartupNotify=false
+X-GNOME-UsesNotifications=true
+X-KDE-StartupNotify=false

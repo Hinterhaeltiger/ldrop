@@ -4,14 +4,18 @@
 use rand::Rng;
 
 use crate::endpoint::{EndpointId, EndpointInfo};
-use crate::proto::location::nearby::connections::connection_request_frame::Medium;
+use crate::link::{LocalLinks, Medium, UpgradePath};
+use crate::proto::location::nearby::connections::bandwidth_upgrade_negotiation_frame::{
+    ClientIntroduction, ClientIntroductionAck, EventType as BwuEvent, UpgradePathInfo,
+};
 use crate::proto::location::nearby::connections::connection_response_frame::ResponseStatus;
 use crate::proto::location::nearby::connections::os_info::OsType;
 use crate::proto::location::nearby::connections::payload_transfer_frame::payload_header::PayloadType;
 use crate::proto::location::nearby::connections::payload_transfer_frame::{PacketType, PayloadChunk, PayloadHeader};
 use crate::proto::location::nearby::connections::{
-    ConnectionRequestFrame, ConnectionResponseFrame, DisconnectionFrame, KeepAliveFrame, OfflineFrame, OsInfo,
-    PayloadTransferFrame, V1Frame, offline_frame, v1_frame,
+    BandwidthUpgradeNegotiationFrame, ConnectionRequestFrame, ConnectionResponseFrame, DisconnectionFrame,
+    KeepAliveFrame, MediumMetadata, MediumRole, OfflineFrame, OsInfo, PayloadTransferFrame, V1Frame, offline_frame,
+    v1_frame,
 };
 use crate::proto::sharing::nearby as sharing;
 
@@ -23,13 +27,24 @@ fn offline(r#type: v1_frame::FrameType, fill: impl FnOnce(&mut V1Frame)) -> Offl
     OfflineFrame { version: Some(offline_frame::Version::V1 as i32), v1: Some(v1) }
 }
 
-pub(crate) fn connection_request(id: EndpointId, info: &EndpointInfo) -> OfflineFrame {
+pub(crate) fn connection_request(id: EndpointId, info: &EndpointInfo, links: &LocalLinks) -> OfflineFrame {
+    let has = |m: Medium| links.mediums.contains(&m);
     offline(v1_frame::FrameType::ConnectionRequest, |v1| {
         v1.connection_request = Some(ConnectionRequestFrame {
             endpoint_id: Some(id.as_str().to_owned()),
             endpoint_name: info.name.clone(),
             endpoint_info: Some(info.encode()),
-            mediums: vec![Medium::WifiLan as i32],
+            mediums: links.mediums.iter().map(|m| m.to_proto()).collect(),
+            medium_metadata: Some(MediumMetadata {
+                supports_5_ghz: Some(links.supports_5ghz),
+                ip_address: links.ip.map(|ip| ip.octets().to_vec()),
+                medium_role: Some(MediumRole {
+                    support_wifi_hotspot_client: Some(has(Medium::WifiHotspot)),
+                    support_wifi_direct_group_client: Some(has(Medium::WifiDirect)),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
             ..Default::default()
         });
     })
@@ -56,6 +71,46 @@ pub(crate) fn keep_alive(ack: bool) -> OfflineFrame {
 
 pub(crate) fn disconnection() -> OfflineFrame {
     offline(v1_frame::FrameType::Disconnection, |v1| v1.disconnection = Some(DisconnectionFrame::default()))
+}
+
+fn bwu(event: BwuEvent, fill: impl FnOnce(&mut BandwidthUpgradeNegotiationFrame)) -> OfflineFrame {
+    offline(v1_frame::FrameType::BandwidthUpgradeNegotiation, |v1| {
+        let mut frame = BandwidthUpgradeNegotiationFrame { event_type: Some(event as i32), ..Default::default() };
+        fill(&mut frame);
+        v1.bandwidth_upgrade_negotiation = Some(frame);
+    })
+}
+
+pub(crate) fn upgrade_path_available(path: &UpgradePath) -> OfflineFrame {
+    bwu(BwuEvent::UpgradePathAvailable, |f| f.upgrade_path_info = Some(path.to_proto()))
+}
+
+pub(crate) fn upgrade_failure(medium: i32) -> OfflineFrame {
+    bwu(BwuEvent::UpgradeFailure, |f| {
+        f.upgrade_path_info = Some(UpgradePathInfo { medium: Some(medium), ..Default::default() });
+    })
+}
+
+pub(crate) fn client_introduction(id: EndpointId, disable_encryption: bool) -> OfflineFrame {
+    bwu(BwuEvent::ClientIntroduction, |f| {
+        f.client_introduction = Some(ClientIntroduction {
+            endpoint_id: Some(id.as_str().to_owned()),
+            supports_disabling_encryption: Some(disable_encryption),
+            last_endpoint_id: None,
+        });
+    })
+}
+
+pub(crate) fn client_introduction_ack() -> OfflineFrame {
+    bwu(BwuEvent::ClientIntroductionAck, |f| f.client_introduction_ack = Some(ClientIntroductionAck {}))
+}
+
+pub(crate) fn last_write_to_prior_channel() -> OfflineFrame {
+    bwu(BwuEvent::LastWriteToPriorChannel, |_| {})
+}
+
+pub(crate) fn safe_to_close_prior_channel() -> OfflineFrame {
+    bwu(BwuEvent::SafeToClosePriorChannel, |_| {})
 }
 
 pub(crate) fn payload_chunk(

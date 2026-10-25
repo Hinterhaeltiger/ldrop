@@ -18,13 +18,17 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-use crate::channel::{self, Channel, HANDSHAKE_TIMEOUT, Incoming, RemoteEndpoint};
+use crate::channel::{self, Channel, HANDSHAKE_TIMEOUT, Incoming, RemoteEndpoint, Role};
+use crate::link::{BoxStream, Link};
 use crate::proto::sharing::nearby::{self as sharing, IntroductionFrame, connection_response_frame::Status};
 use crate::{Error, RejectReason, TextKind, WifiSecurity, finish_session, frames};
 
 /// Upper bound on items in one introduction (SPEC §14: cap counts).
 const MAX_ITEMS: usize = 10_000;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+/// Transfers at least this big are moved to a faster medium if there is one, as Windows
+/// Quick Share does (`kAttachmentsSizeThresholdOverHighQualityMedium`) [R44].
+const UPGRADE_THRESHOLD: u64 = 1_000_000;
 
 #[derive(Debug, Clone)]
 pub struct Offer {
@@ -72,7 +76,7 @@ pub enum Answer {
 #[derive(Debug)]
 pub enum InboundEvent {
     /// Reply on the sender. Dropping it cancels the transfer.
-    Offer(Offer, oneshot::Sender<Answer>),
+    Offer(Box<Offer>, oneshot::Sender<Answer>),
     Progress {
         bytes_done: u64,
     },
@@ -99,19 +103,22 @@ pub enum ReceiveOutcome {
 
 /// Runs a receiving session on `stream`, from the connection request to the disconnection.
 pub async fn receive<S>(
-    mut stream: S,
+    stream: S,
+    link: &Link,
     events: mpsc::Sender<InboundEvent>,
     cancel: CancellationToken,
 ) -> Result<ReceiveOutcome, Error>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let mut stream: BoxStream = Box::new(stream);
     let (peer, session) = tokio::select! {
         result = channel::server_handshake(&mut stream) => result?,
         () = cancel.cancelled() => return Err(Error::Cancelled),
     };
     let pin = session.pin();
-    let mut ch = Channel::spawn(stream, session.sealer, session.opener);
+    let role = Role::Server { remote_id: peer.id, peer: peer.links.clone() };
+    let mut ch = Channel::spawn(stream, session, role, link);
     let result = tokio::select! {
         result = run(&mut ch, peer, pin, &events) => result,
         () = cancel.cancelled() => Err(Error::Cancelled),
@@ -200,8 +207,9 @@ async fn run(
         wifi: plan.wifi.iter().map(|(_, w)| w.clone()).collect(),
     };
 
+    let total = offer.total_size();
     let (reply, mut answer) = oneshot::channel();
-    events.send(InboundEvent::Offer(offer, reply)).await.map_err(|_| Error::Cancelled)?;
+    events.send(InboundEvent::Offer(Box::new(offer), reply)).await.map_err(|_| Error::Cancelled)?;
     let answer = loop {
         tokio::select! {
             answer = &mut answer => break answer.map_err(|_| Error::Cancelled)?,
@@ -227,6 +235,9 @@ async fn run(
         }
     };
     ch.send_sharing(&frames::response(Status::Accept)).await?;
+    if total >= UPGRADE_THRESHOLD {
+        ch.request_upgrade();
+    }
     let received = transfer(ch, plan, &staging, events).await?;
     let _ = ch.close().await;
     Ok(ReceiveOutcome::Completed(received))

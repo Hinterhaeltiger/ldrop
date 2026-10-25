@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Quick Share on the LAN (SPEC §5): a TCP listener that takes requests while visible, the
+//! Quick Share (SPEC §5): on the LAN, a TCP listener that takes requests while visible, the
 //! mDNS service published per visibility session, mDNS browsing plus the BLE wake while a
-//! discovery session runs, and outgoing transfers.
+//! discovery session runs, and outgoing transfers; over Bluetooth, the same through
+//! [`bluetooth`].
+
+mod bluetooth;
 
 use std::collections::HashMap;
+use std::fmt;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -19,10 +23,12 @@ use ldrop_core::{
 };
 use ldrop_mdns::{Event, Mdns, Published};
 use ldrop_quickshare::endpoint::{MDNS_SERVICE_TYPE, VENDOR_SAMSUNG, mdns_instance_name, parse_mdns_instance_name};
+use ldrop_quickshare::link::{BoxStream, Stream};
 use ldrop_quickshare::receive::{self, Answer, InboundEvent, Offer, ReceiveOutcome, Received};
 use ldrop_quickshare::send::{self, OutboundEvent, Outgoing, OutgoingFile, SendOutcome};
 use ldrop_quickshare::{
-    DeviceType, EndpointId, EndpointInfo, Error as QsError, LocalEndpoint, RejectReason, RemoteEndpoint, TextKind,
+    DeviceType, EndpointId, EndpointInfo, Error as QsError, Link, LocalEndpoint, Medium as QsMedium, RejectReason,
+    RemoteEndpoint, TextKind,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
@@ -46,22 +52,70 @@ const MAX_INCOMING: usize = 16;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Backend {
-    mdns: Mdns,
-    port: u16,
+    /// `None` when the `lan` medium is off or its port could not be bound.
+    lan: Option<Lan>,
+    bt: bluetooth::Bluetooth,
     incoming: Arc<Semaphore>,
     /// Serializes starting and stopping discovery.
     discovery: tokio::sync::Mutex<Option<DiscoveryRun>>,
     inner: Mutex<Inner>,
 }
 
+struct Lan {
+    mdns: Mdns,
+    port: u16,
+}
+
 #[derive(Default)]
 struct Inner {
-    /// Our endpoint ID and mDNS publication while visible; a new ID per visibility session.
-    published: Option<(EndpointId, Published)>,
-    /// Addresses of the devices the current discovery run reported, by device ID.
-    peers: HashMap<String, Vec<SocketAddr>>,
-    prompts: HashMap<IpAddr, usize>,
-    cooldown: HashMap<IpAddr, Instant>,
+    /// Set while visible; a new endpoint ID per visibility session.
+    visible: Option<Visible>,
+    /// How to reach the devices the current discovery run reported, by device ID.
+    peers: HashMap<String, Route>,
+    prompts: HashMap<Origin, usize>,
+    cooldown: HashMap<Origin, Instant>,
+}
+
+struct Visible {
+    id: EndpointId,
+    /// The mDNS publication, when the LAN is on.
+    _mdns: Option<Published>,
+}
+
+/// Where a connection came from. Prompt limits and cooldowns apply per origin.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Origin {
+    Ip(IpAddr),
+    /// A Bluetooth address.
+    Bluetooth(String),
+}
+
+impl fmt::Display for Origin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Origin::Ip(ip) => ip.fmt(f),
+            Origin::Bluetooth(address) => write!(f, "Bluetooth {address}"),
+        }
+    }
+}
+
+/// The ways to reach a device found by discovery.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Route {
+    lan: Vec<SocketAddr>,
+    /// Its Bluetooth address.
+    bt: Option<String>,
+}
+
+impl Route {
+    fn mediums(&self) -> Vec<Medium> {
+        let lan = (!self.lan.is_empty()).then_some(Medium::Lan);
+        lan.into_iter().chain(self.bt.as_ref().map(|_| Medium::Bt)).collect()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.lan.is_empty() && self.bt.is_none()
+    }
 }
 
 struct DiscoveryRun {
@@ -75,41 +129,41 @@ impl Backend {
     }
 
     fn own_endpoint(&self) -> Option<EndpointId> {
-        self.inner().published.as_ref().map(|(id, _)| *id)
+        self.inner().visible.as_ref().map(|v| v.id)
     }
 
-    /// Reserves a prompt for `ip`, or `None` when the limits or a cooldown say no.
-    fn try_prompt(self: &Arc<Self>, ip: IpAddr) -> Option<PromptSlot> {
+    /// Reserves a prompt for `origin`, or `None` when the limits or a cooldown say no.
+    fn try_prompt(self: &Arc<Self>, origin: &Origin) -> Option<PromptSlot> {
         let mut inner = self.inner();
         let now = Instant::now();
         inner.cooldown.retain(|_, until| *until > now);
         let total: usize = inner.prompts.values().sum();
-        let mine = inner.prompts.get(&ip).copied().unwrap_or(0);
-        if inner.cooldown.contains_key(&ip) || total >= MAX_PROMPTS || mine >= MAX_PROMPTS_PER_PEER {
+        let mine = inner.prompts.get(origin).copied().unwrap_or(0);
+        if inner.cooldown.contains_key(origin) || total >= MAX_PROMPTS || mine >= MAX_PROMPTS_PER_PEER {
             return None;
         }
-        *inner.prompts.entry(ip).or_default() += 1;
-        Some(PromptSlot { qs: self.clone(), ip })
+        *inner.prompts.entry(origin.clone()).or_default() += 1;
+        Some(PromptSlot { qs: self.clone(), origin: origin.clone() })
     }
 
-    fn cool_down(&self, ip: IpAddr) {
-        self.inner().cooldown.insert(ip, Instant::now() + REJECT_COOLDOWN);
+    fn cool_down(&self, origin: &Origin) {
+        self.inner().cooldown.insert(origin.clone(), Instant::now() + REJECT_COOLDOWN);
     }
 }
 
 /// A pending prompt, released when dropped.
 struct PromptSlot {
     qs: Arc<Backend>,
-    ip: IpAddr,
+    origin: Origin,
 }
 
 impl Drop for PromptSlot {
     fn drop(&mut self) {
         let mut inner = self.qs.inner();
-        if let Some(n) = inner.prompts.get_mut(&self.ip) {
+        if let Some(n) = inner.prompts.get_mut(&self.origin) {
             *n -= 1;
             if *n == 0 {
-                inner.prompts.remove(&self.ip);
+                inner.prompts.remove(&self.origin);
             }
         }
     }
@@ -119,25 +173,41 @@ fn backend(s: &Shared) -> Option<Arc<Backend>> {
     s.quickshare.get().cloned()
 }
 
-fn enabled(s: &Shared) -> bool {
+/// Whether Quick Share is on with `medium` in the config.
+fn uses(s: &Shared, medium: Medium) -> bool {
     let st = s.state();
-    st.config.quickshare.enabled && st.config.quickshare.mediums.contains(&Medium::Lan)
+    st.config.quickshare.enabled && st.config.quickshare.mediums.contains(&medium)
 }
 
-/// Binds the listener and starts following visibility. Needs `quickshare.enabled` and the
-/// `lan` medium at startup; later config changes are honored for new connections only.
+fn enabled(s: &Shared) -> bool {
+    uses(s, Medium::Lan) || uses(s, Medium::Bt)
+}
+
+/// Binds the listener and starts following visibility. Needs `quickshare.enabled` at startup,
+/// and the `lan` medium for the listener; later config changes are honored for new
+/// connections and visibility sessions.
 pub async fn start(s: &Arc<Shared>) -> anyhow::Result<()> {
+    let marker = s.paths.state_dir.join(bluetooth::MARKER_FILE);
+    bluetooth::restore_after_crash(&marker).await;
     if !enabled(s) {
-        tracing::info!("Quick Share on the LAN is disabled in the config");
+        tracing::info!("Quick Share is disabled in the config");
         return Ok(());
     }
-    let port = s.state().config.quickshare.tcp_port;
-    let listener = bind(port).await.with_context(|| format!("cannot listen on TCP port {port}"))?;
-    let port = listener.local_addr()?.port();
-    let mdns = Mdns::new().context("cannot start mDNS")?;
+    let (lan, listener) = if uses(s, Medium::Lan) {
+        match start_lan(s).await {
+            Ok((lan, listener)) => (Some(lan), Some(listener)),
+            Err(e) => {
+                tracing::error!("Quick Share on the LAN is unavailable: {e:#}");
+                (None, None)
+            }
+        }
+    } else {
+        tracing::info!("Quick Share on the LAN is disabled in the config");
+        (None, None)
+    };
     let qs = Arc::new(Backend {
-        mdns,
-        port,
+        lan,
+        bt: bluetooth::Bluetooth::new(marker),
         incoming: Arc::new(Semaphore::new(MAX_INCOMING)),
         discovery: tokio::sync::Mutex::new(None),
         inner: Mutex::new(Inner::default()),
@@ -145,10 +215,28 @@ pub async fn start(s: &Arc<Shared>) -> anyhow::Result<()> {
     if s.quickshare.set(qs).is_err() {
         anyhow::bail!("Quick Share backend started twice");
     }
-    tracing::info!("Quick Share listening on TCP port {port}");
-    tokio::spawn(accept_loop(s.clone(), listener));
+    if let Some(listener) = listener {
+        tokio::spawn(accept_loop(s.clone(), listener));
+    }
     tokio::spawn(follow_visibility(s.clone()));
     Ok(())
+}
+
+async fn start_lan(s: &Shared) -> anyhow::Result<(Lan, TcpListener)> {
+    let port = s.state().config.quickshare.tcp_port;
+    let listener = bind(port).await.with_context(|| format!("cannot listen on TCP port {port}"))?;
+    let port = listener.local_addr()?.port();
+    let mdns = Mdns::new().context("cannot start mDNS")?;
+    tracing::info!("Quick Share listening on TCP port {port}");
+    Ok((Lan { mdns, port }, listener))
+}
+
+/// Puts the Bluetooth adapter back before the daemon exits.
+pub async fn shutdown(s: &Shared) {
+    if let Some(qs) = backend(s) {
+        qs.inner().visible = None;
+        qs.bt.hide().await;
+    }
 }
 
 /// Dual-stack where IPv6 is available.
@@ -159,23 +247,42 @@ async fn bind(port: u16) -> std::io::Result<TcpListener> {
     }
 }
 
-/// Publishes our service while visible, with a fresh endpoint ID each time (SPEC §5.1, §14).
+/// Announces us while visible, with a fresh endpoint ID each time (SPEC §5.1, §5.2, §14):
+/// the mDNS service on the LAN, the encoded adapter name over Bluetooth.
 async fn follow_visibility(s: Arc<Shared>) {
     let Some(qs) = backend(&s) else { return };
     let mut rx = s.visibility_tx.subscribe();
     loop {
         let (mode, _) = *rx.borrow_and_update();
         let visible = mode == Visibility::Everyone && enabled(&s);
-        let published = qs.inner().published.is_some();
-        if visible && !published {
+        let shown = qs.own_endpoint().is_some();
+        if visible && !shown {
             let id = EndpointId::random();
             let info = EndpointInfo::visible(&s.device_name(), DeviceType::Laptop);
-            match qs.mdns.publish(MDNS_SERVICE_TYPE, &mdns_instance_name(id), qs.port, &[("n", &info.to_txt())]) {
-                Ok(p) => qs.inner().published = Some((id, p)),
-                Err(e) => tracing::error!("cannot publish the Quick Share service: {e}"),
+            let mdns = match &qs.lan {
+                Some(lan) if uses(&s, Medium::Lan) => {
+                    match lan.mdns.publish(
+                        MDNS_SERVICE_TYPE,
+                        &mdns_instance_name(id),
+                        lan.port,
+                        &[("n", &info.to_txt())],
+                    ) {
+                        Ok(p) => Some(p),
+                        Err(e) => {
+                            tracing::error!("cannot publish the Quick Share service: {e}");
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            };
+            qs.inner().visible = Some(Visible { id, _mdns: mdns });
+            if uses(&s, Medium::Bt) {
+                qs.bt.show(&s, id, &info).await;
             }
-        } else if !visible && published {
-            qs.inner().published = None;
+        } else if !visible && shown {
+            qs.inner().visible = None;
+            qs.bt.hide().await;
         }
         if rx.changed().await.is_err() {
             return;
@@ -194,21 +301,26 @@ async fn accept_loop(s: Arc<Shared>, listener: TcpListener) {
                 continue;
             }
         };
-        if qs.own_endpoint().is_none() {
-            tracing::debug!("Quick Share: dropping connection from {addr} while hidden");
-            continue;
-        }
-        let Ok(permit) = qs.incoming.clone().try_acquire_owned() else {
-            tracing::warn!("Quick Share: dropping connection from {addr}: too many connections");
-            continue;
-        };
-        let s = s.clone();
-        let qs = qs.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            Incoming::serve(s, qs, stream, addr).await;
-        });
+        let _ = stream.set_nodelay(true);
+        admit(&s, &qs, stream, Origin::Ip(addr.ip().to_canonical()), QsMedium::WifiLan);
     }
+}
+
+/// Serves an incoming connection while visible and within the connection limit.
+fn admit(s: &Arc<Shared>, qs: &Arc<Backend>, stream: impl Stream, origin: Origin, medium: QsMedium) {
+    if qs.own_endpoint().is_none() {
+        tracing::debug!("Quick Share: dropping connection from {origin} while hidden");
+        return;
+    }
+    let Ok(permit) = qs.incoming.clone().try_acquire_owned() else {
+        tracing::warn!("Quick Share: dropping connection from {origin}: too many connections");
+        return;
+    };
+    let (s, qs) = (s.clone(), qs.clone());
+    tokio::spawn(async move {
+        let _permit = permit;
+        Incoming::serve(s, qs, stream, origin, medium).await;
+    });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -217,7 +329,7 @@ async fn accept_loop(s: Arc<Shared>, listener: TcpListener) {
 struct Incoming {
     s: Arc<Shared>,
     qs: Arc<Backend>,
-    ip: IpAddr,
+    origin: Origin,
     cancel: CancellationToken,
     /// Set once the offer became a transfer.
     id: Option<u32>,
@@ -227,27 +339,19 @@ struct Incoming {
 }
 
 impl Incoming {
-    async fn serve(s: Arc<Shared>, qs: Arc<Backend>, stream: TcpStream, addr: SocketAddr) {
-        let _ = stream.set_nodelay(true);
+    async fn serve(s: Arc<Shared>, qs: Arc<Backend>, stream: impl Stream, origin: Origin, medium: QsMedium) {
         let cancel = CancellationToken::new();
-        let mut this = Incoming {
-            s,
-            qs,
-            ip: addr.ip().to_canonical(),
-            cancel: cancel.clone(),
-            id: None,
-            layout: (0, 0),
-            accepted: None,
-        };
+        let mut this = Incoming { s, qs, origin, cancel: cancel.clone(), id: None, layout: (0, 0), accepted: None };
         let (tx, rx) = mpsc::channel(16);
-        let (result, ()) = tokio::join!(receive::receive(stream, tx, cancel), this.handle(rx));
+        let link = Link::fixed(medium);
+        let (result, ()) = tokio::join!(receive::receive(stream, &link, tx, cancel), this.handle(rx));
         this.finish(result).await;
     }
 
     async fn handle(&mut self, mut rx: mpsc::Receiver<InboundEvent>) {
         while let Some(event) = rx.recv().await {
             match event {
-                InboundEvent::Offer(offer, reply) => self.on_offer(offer, reply).await,
+                InboundEvent::Offer(offer, reply) => self.on_offer(*offer, reply).await,
                 InboundEvent::Progress { bytes_done } => {
                     if let Some(id) = self.id {
                         transfer::update(&self.s, id, |p| p.bytes_done = bytes_done).await;
@@ -258,15 +362,15 @@ impl Incoming {
     }
 
     async fn on_offer(&mut self, offer: Offer, mut reply: tokio::sync::oneshot::Sender<Answer>) {
-        let Some(slot) = self.qs.try_prompt(self.ip) else {
+        let Some(slot) = self.qs.try_prompt(&self.origin) else {
             tracing::info!(
                 "Quick Share: declining a request from {}: too many pending requests, or declined recently",
-                self.ip
+                self.origin
             );
             let _ = reply.send(Answer::Reject(RejectReason::Declined));
             return;
         };
-        tracing::debug!("Quick Share: request from {} ({})", offer.peer.display_name(), self.ip);
+        tracing::debug!("Quick Share: request from {} ({})", offer.peer.display_name(), self.origin);
         let mut record = TransferRecord::new(
             Direction::Incoming,
             TransferState::AwaitingAcceptance,
@@ -322,7 +426,7 @@ impl Incoming {
                 }
             },
             Decision::Reject | Decision::Timeout => {
-                self.qs.cool_down(self.ip);
+                self.qs.cool_down(&self.origin);
                 let (reason, error) = match decision {
                     Decision::Timeout => (RejectReason::TimedOut, "no answer before the deadline"),
                     _ => (RejectReason::Declined, ""),
@@ -342,7 +446,7 @@ impl Incoming {
     async fn finish(self, result: std::result::Result<ReceiveOutcome, QsError>) {
         let Some(id) = self.id else {
             if let Err(e) = result {
-                tracing::debug!("Quick Share: connection from {} ended: {e}", self.ip);
+                tracing::debug!("Quick Share: connection from {} ended: {e}", self.origin);
             }
             return;
         };
@@ -479,8 +583,8 @@ async fn fail(s: &Arc<Shared>, id: u32, error: String) {
 // ---------------------------------------------------------------------------------------------
 // Discovery
 
-/// Starts or stops browsing and the BLE wake so they run exactly while a discovery session
-/// exists. Called after every session change.
+/// Starts or stops browsing, the BLE wake and the Bluetooth scan so they run exactly while a
+/// discovery session exists. Called after every session change.
 pub async fn sync_discovery(s: Arc<Shared>) {
     let Some(qs) = backend(&s) else { return };
     let mut run = qs.discovery.lock().await;
@@ -503,62 +607,116 @@ pub async fn sync_discovery(s: Arc<Shared>) {
 async fn discover(s: Arc<Shared>, qs: Arc<Backend>, token: CancellationToken) {
     tracing::debug!("Quick Share: discovery started");
     let wake = tokio::spawn(ble_wake(token.clone()));
-    match qs.mdns.browse(MDNS_SERVICE_TYPE) {
-        Ok(mut browser) => loop {
-            let event = tokio::select! {
-                () = token.cancelled() => break,
-                event = browser.next() => event,
-            };
-            match event {
-                Some(Event::Resolved(service)) => {
-                    let Some(endpoint) = parse_mdns_instance_name(&service.instance) else { continue };
-                    if qs.own_endpoint() == Some(endpoint) || service.addrs.is_empty() {
-                        continue;
-                    }
-                    let Some(info) = service.txt.get("n").and_then(|n| EndpointInfo::from_txt(n).ok()) else {
-                        continue;
-                    };
-                    // Hidden endpoints carry no name and are only reachable by QR code.
-                    let Some(name) = info.name.clone() else { continue };
-                    let id = format!("{DEVICE_PREFIX}{endpoint}");
-                    tracing::debug!("Quick Share: found {name} at {:?}", service.addrs);
-                    qs.inner().peers.insert(id.clone(), service.addrs);
-                    let device = Device {
-                        id,
-                        name,
-                        kind: kind(info.device_type),
-                        platform: Platform::Android,
-                        protocol: Protocol::QuickShare,
-                        mediums: vec![Medium::Lan],
-                        vendor: vendor(&info),
-                    };
-                    discovery::device_found(&s, device).await;
-                }
-                Some(Event::Removed { instance }) => {
-                    let Some(endpoint) = parse_mdns_instance_name(&instance) else { continue };
-                    let id = format!("{DEVICE_PREFIX}{endpoint}");
-                    if qs.inner().peers.remove(&id).is_some() {
-                        discovery::device_lost(&s, &id).await;
-                    }
-                }
-                None => {
-                    tracing::error!("Quick Share: mDNS stopped");
-                    token.cancelled().await;
-                    break;
-                }
-            }
-        },
-        Err(e) => {
-            tracing::error!("Quick Share: cannot browse mDNS: {e}");
-            token.cancelled().await;
-        }
+    let bt = uses(&s, Medium::Bt).then(|| {
+        let (s, qs, token) = (s.clone(), qs.clone(), token.clone());
+        tokio::spawn(async move { qs.bt.discover(&s, &qs, token).await })
+    });
+    match &qs.lan {
+        Some(lan) if uses(&s, Medium::Lan) => browse(&s, &qs, lan, &token).await,
+        _ => token.cancelled().await,
     }
     let _ = wake.await;
+    if let Some(bt) = bt {
+        let _ = bt.await;
+    }
     let lost: Vec<String> = qs.inner().peers.drain().map(|(id, _)| id).collect();
     for id in lost {
         discovery::device_lost(&s, &id).await;
     }
     tracing::debug!("Quick Share: discovery stopped");
+}
+
+async fn browse(s: &Arc<Shared>, qs: &Arc<Backend>, lan: &Lan, token: &CancellationToken) {
+    let mut browser = match lan.mdns.browse(MDNS_SERVICE_TYPE) {
+        Ok(browser) => browser,
+        Err(e) => {
+            tracing::error!("Quick Share: cannot browse mDNS: {e}");
+            return token.cancelled().await;
+        }
+    };
+    loop {
+        let event = tokio::select! {
+            () = token.cancelled() => return,
+            event = browser.next() => event,
+        };
+        match event {
+            Some(Event::Resolved(service)) => {
+                let Some(endpoint) = parse_mdns_instance_name(&service.instance) else { continue };
+                if qs.own_endpoint() == Some(endpoint) || service.addrs.is_empty() {
+                    continue;
+                }
+                let Some(info) = service.txt.get("n").and_then(|n| EndpointInfo::from_txt(n).ok()) else {
+                    continue;
+                };
+                tracing::debug!("Quick Share: found {:?} at {:?}", info.name, service.addrs);
+                found(s, qs, endpoint, &info, |route| route.lan = service.addrs).await;
+            }
+            Some(Event::Removed { instance }) => {
+                let Some(endpoint) = parse_mdns_instance_name(&instance) else { continue };
+                lost(s, qs, &device_id(endpoint), |route| route.lan.clear()).await;
+            }
+            None => {
+                tracing::error!("Quick Share: mDNS stopped");
+                return token.cancelled().await;
+            }
+        }
+    }
+}
+
+fn device_id(endpoint: EndpointId) -> String {
+    format!("{DEVICE_PREFIX}{endpoint}")
+}
+
+/// A medium reported a device: `update` records how to reach it there.
+async fn found(
+    s: &Arc<Shared>,
+    qs: &Backend,
+    endpoint: EndpointId,
+    info: &EndpointInfo,
+    update: impl FnOnce(&mut Route),
+) {
+    // Hidden endpoints carry no name and are only reachable by QR code.
+    let Some(name) = info.name.clone() else { return };
+    let id = device_id(endpoint);
+    let mediums = {
+        let mut inner = qs.inner();
+        let route = inner.peers.entry(id.clone()).or_default();
+        update(route);
+        route.mediums()
+    };
+    let device = Device {
+        id,
+        name,
+        kind: kind(info.device_type),
+        platform: Platform::Android,
+        protocol: Protocol::QuickShare,
+        mediums,
+        vendor: vendor(info),
+    };
+    discovery::device_found(s, device).await;
+}
+
+/// A medium lost a device: `update` forgets the way to reach it there. Gone once no medium
+/// reaches it.
+async fn lost(s: &Arc<Shared>, qs: &Backend, id: &str, update: impl FnOnce(&mut Route)) {
+    let mediums = {
+        let mut inner = qs.inner();
+        let Some(route) = inner.peers.get_mut(id) else { return };
+        update(route);
+        if route.is_empty() {
+            inner.peers.remove(id);
+        }
+        inner.peers.get(id).map(Route::mediums)
+    };
+    match mediums {
+        None => discovery::device_lost(s, id).await,
+        Some(mediums) => {
+            let device = s.state().devices.iter().find(|d| d.id == id).cloned();
+            if let Some(device) = device {
+                discovery::device_found(s, Device { mediums, ..device }).await;
+            }
+        }
+    }
 }
 
 /// Makes Android devices in Everyone mode publish their mDNS service (SPEC §5.2).
@@ -587,7 +745,7 @@ pub fn is_quickshare_device(device: &Device) -> bool {
 
 pub async fn start_outgoing(s: &Arc<Shared>, device: &Device, items: Vec<Item>) -> Result<u32> {
     let qs = backend(s).ok_or_else(|| Error::Unavailable("Quick Share is not running".into()))?;
-    let addrs = qs
+    let route = qs
         .inner()
         .peers
         .get(&device.id)
@@ -604,7 +762,7 @@ pub async fn start_outgoing(s: &Arc<Shared>, device: &Device, items: Vec<Item>) 
     let record = TransferRecord::new(Direction::Outgoing, TransferState::Connecting, peer, items);
     let cancel = record.cancel.clone();
     let id = transfer::create(s, record).await?;
-    tokio::spawn(run_outgoing(s.clone(), id, addrs, outgoing, cancel));
+    tokio::spawn(run_outgoing(s.clone(), qs, id, route, outgoing, cancel));
     Ok(id)
 }
 
@@ -625,13 +783,20 @@ fn outgoing(items: &[Item]) -> Result<Outgoing> {
     Ok(Outgoing::Files(files))
 }
 
-async fn run_outgoing(s: Arc<Shared>, id: u32, addrs: Vec<SocketAddr>, outgoing: Outgoing, cancel: CancellationToken) {
-    let stream = tokio::select! {
-        stream = connect(&addrs) => stream,
+async fn run_outgoing(
+    s: Arc<Shared>,
+    qs: Arc<Backend>,
+    id: u32,
+    route: Route,
+    outgoing: Outgoing,
+    cancel: CancellationToken,
+) {
+    let connected = tokio::select! {
+        connected = connect(&s, &qs, &route) => connected,
         () = cancel.cancelled() => return cancelled(&s, id, "cancelled on this device").await,
     };
-    let stream = match stream {
-        Ok(stream) => stream,
+    let (stream, medium) = match connected {
+        Ok(connected) => connected,
         Err(e) => return fail(&s, id, format!("cannot connect: {e}")).await,
     };
     let local =
@@ -652,7 +817,8 @@ async fn run_outgoing(s: Arc<Shared>, id: u32, addrs: Vec<SocketAddr>, outgoing:
             }
         }
     };
-    let (result, ()) = tokio::join!(send::send(stream, &local, outgoing, tx, cancel), events);
+    let link = Link::fixed(medium);
+    let (result, ()) = tokio::join!(send::send(stream, &local, &link, outgoing, tx, cancel), events);
     match result {
         Ok(SendOutcome::Completed) => {
             transfer::update(&s, id, |p| {
@@ -680,8 +846,26 @@ async fn run_outgoing(s: Arc<Shared>, id: u32, addrs: Vec<SocketAddr>, outgoing:
     }
 }
 
+/// Connects over the LAN if the device is there, else over Bluetooth.
+async fn connect(s: &Arc<Shared>, qs: &Backend, route: &Route) -> std::result::Result<(BoxStream, QsMedium), String> {
+    let mut errors = Vec::new();
+    if !route.lan.is_empty() {
+        match connect_tcp(&route.lan).await {
+            Ok(stream) => return Ok((Box::new(stream), QsMedium::WifiLan)),
+            Err(e) => errors.push(e.to_string()),
+        }
+    }
+    if let Some(address) = &route.bt {
+        match qs.bt.connect(s, address).await {
+            Ok(stream) => return Ok((Box::new(stream), QsMedium::Bluetooth)),
+            Err(e) => errors.push(format!("Bluetooth: {e}")),
+        }
+    }
+    Err(errors.join("; "))
+}
+
 /// Tries each address in turn (IPv4 first, as mDNS lists them).
-async fn connect(addrs: &[SocketAddr]) -> std::io::Result<TcpStream> {
+async fn connect_tcp(addrs: &[SocketAddr]) -> std::io::Result<TcpStream> {
     let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "no address");
     for addr in addrs {
         match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
@@ -710,6 +894,7 @@ mod tests {
                 id: EndpointId::random(),
                 info: EndpointInfo::visible("Pixel", DeviceType::Phone),
                 endpoint_name: None,
+                links: Default::default(),
             },
             pin: "1234".into(),
             files: vec![
@@ -738,6 +923,19 @@ mod tests {
         assert!(matches!(outgoing(&[text]).unwrap(), Outgoing::Text { kind: TextKind::Text, .. }));
         let file = Item { name: "a".into(), mime: "x/y".into(), path: Some("/tmp/a".into()), ..Default::default() };
         assert!(matches!(outgoing(&[file.clone(), file]).unwrap(), Outgoing::Files(f) if f.len() == 2));
+    }
+
+    #[test]
+    fn routes() {
+        let mut route = Route::default();
+        assert!(route.is_empty());
+        route.bt = Some("AA:BB:CC:DD:EE:FF".into());
+        assert_eq!(route.mediums(), [Medium::Bt]);
+        route.lan = vec!["192.168.1.5:4000".parse().unwrap()];
+        assert_eq!(route.mediums(), [Medium::Lan, Medium::Bt]);
+        route.bt = None;
+        assert_eq!(route.mediums(), [Medium::Lan]);
+        assert_eq!(Origin::Bluetooth("AA:BB:CC:DD:EE:FF".into()).to_string(), "Bluetooth AA:BB:CC:DD:EE:FF");
     }
 
     #[test]
