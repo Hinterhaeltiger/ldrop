@@ -7,8 +7,9 @@
 #
 # Installs the programs, the systemd user unit, the D-Bus service, the desktop and autostart
 # entries, the Plasma applet, the GNOME Shell extension, the file manager entries and, when
-# KDE's Purpose library was found at build time, the KDE Share menu plugin. ldrop-gui does
-# the per-user rest on its first start (SPEC §11.6). Packagers: set DESTDIR and PREFIX=/usr.
+# their libraries were found at build time, the native Nautilus extension and the KDE Share
+# menu plugin. ldrop-gui does the per-user rest on its first start (SPEC §11.6). Pass the same
+# PREFIX to make and make install. Packagers: set DESTDIR and PREFIX=/usr.
 
 PREFIX       ?= /usr/local
 BINDIR       ?= $(PREFIX)/bin
@@ -20,21 +21,27 @@ AUTOSTARTDIR ?= $(SYSCONFDIR)/xdg/autostart
 # KDE Share menu plugin; it has to sit in Qt's own plugin directory to be found.
 QT_PLUGINDIR ?= $(shell qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || echo $(LIBDIR)/qt6/plugins)
 PURPOSE      ?= yes
+# Native Nautilus extension; Nautilus only loads extensions from its own directory.
+NAUTILUS_EXTDIR ?= $(shell pkg-config --variable=extensiondir libnautilus-extension-4 2>/dev/null)
+NAUTILUS     ?= yes
 
 CARGO   ?= cargo
 INSTALL ?= install
 BINS    := ldropd ldrop ldrop-tui ldrop-gui
 RELEASE := target/release
 PURPOSE_BUILD := build/purpose
+NAUTILUS_LIB  := build/libldrop-nautilus.so
+CC     ?= cc
+CFLAGS ?= -O2 -g
 
 # The packaged files name /usr/bin and bare program names; point them at BINDIR.
 SUBST = sed -e 's|/usr/bin/ldropd|$(BINDIR)/ldropd|g' \
 	-e 's|Exec=ldrop|Exec=$(BINDIR)/ldrop|g' \
 	-e 's|"ldrop-gui"|"$(BINDIR)/ldrop-gui"|g'
 
-.PHONY: all build purpose install install-user uninstall uninstall-user check
+.PHONY: all build purpose nautilus install install-user uninstall uninstall-user check
 
-all: build purpose
+all: build purpose nautilus
 
 build:
 	$(CARGO) build --release --locked
@@ -52,6 +59,21 @@ ifeq ($(PURPOSE),yes)
 	else \
 		rm -rf $(PURPOSE_BUILD); \
 		echo "note: KF6 Purpose not found (see $(PURPOSE_BUILD).log), skipping the KDE Share menu plugin"; \
+	fi
+endif
+
+# Optional: without libnautilus-extension-4, Nautilus gets the nautilus-python extension
+# instead (and ldrop-gui adds a Scripts entry when nautilus-python is missing too).
+nautilus:
+ifeq ($(NAUTILUS),yes)
+	@mkdir -p build; if pkg-config --exists libnautilus-extension-4 2>/dev/null; then \
+		echo "$(CC) ... -o $(NAUTILUS_LIB)"; \
+		$(CC) $(CFLAGS) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -shared -fPIC \
+			-DLDROP_GUI='"$(BINDIR)/ldrop-gui"' -o $(NAUTILUS_LIB) integrations/nautilus/ldrop-nautilus.c \
+			$$(pkg-config --cflags --libs libnautilus-extension-4) $(LDFLAGS); \
+	else \
+		rm -f $(NAUTILUS_LIB); \
+		echo "note: libnautilus-extension-4 not found, Nautilus gets the nautilus-python extension instead"; \
 	fi
 endif
 
@@ -75,10 +97,19 @@ install:
 	$(INSTALL) -Dm644 -t $(DESTDIR)$(DATADIR)/plasma/plasmoids/org.ldrop.visibility/contents/ui packaging/plasma/org.ldrop.visibility/contents/ui/main.qml
 	$(INSTALL) -Dm644 -t $(DESTDIR)$(DATADIR)/gnome-shell/extensions/ldrop@ldrop.org integrations/gnome-shell/ldrop@ldrop.org/metadata.json integrations/gnome-shell/ldrop@ldrop.org/extension.js
 	@# "Send with ldrop" in file managers (KIO wants service menus executable)
-	$(INSTALL) -d $(DESTDIR)$(DATADIR)/kio/servicemenus $(DESTDIR)$(DATADIR)/nautilus-python/extensions $(DESTDIR)$(DATADIR)/nemo/actions $(DESTDIR)$(DATADIR)/file-manager/actions
+	$(INSTALL) -d $(DESTDIR)$(DATADIR)/kio/servicemenus $(DESTDIR)$(DATADIR)/nemo/actions $(DESTDIR)$(DATADIR)/file-manager/actions
 	$(SUBST) integrations/dolphin/org.ldrop.Ldrop.share.desktop > $(DESTDIR)$(DATADIR)/kio/servicemenus/org.ldrop.Ldrop.share.desktop
 	chmod 755 $(DESTDIR)$(DATADIR)/kio/servicemenus/org.ldrop.Ldrop.share.desktop
-	$(SUBST) integrations/nautilus/ldrop.py > $(DESTDIR)$(DATADIR)/nautilus-python/extensions/ldrop.py
+	@# Nautilus: the native extension, else the nautilus-python one (never both: two entries)
+	@if [ "$(NAUTILUS)" = yes ] && [ -f $(NAUTILUS_LIB) ] && [ -n "$(NAUTILUS_EXTDIR)" ]; then \
+		echo "$(INSTALL) -Dm755 $(NAUTILUS_LIB) $(DESTDIR)$(NAUTILUS_EXTDIR)/libldrop-nautilus.so"; \
+		$(INSTALL) -Dm755 $(NAUTILUS_LIB) $(DESTDIR)$(NAUTILUS_EXTDIR)/libldrop-nautilus.so; \
+		rm -f $(DESTDIR)$(DATADIR)/nautilus-python/extensions/ldrop.py; \
+	else \
+		$(INSTALL) -d $(DESTDIR)$(DATADIR)/nautilus-python/extensions; \
+		echo "installing the nautilus-python extension"; \
+		$(SUBST) integrations/nautilus/ldrop.py > $(DESTDIR)$(DATADIR)/nautilus-python/extensions/ldrop.py; \
+	fi
 	$(SUBST) integrations/nemo/ldrop.nemo_action > $(DESTDIR)$(DATADIR)/nemo/actions/ldrop.nemo_action
 	$(SUBST) integrations/file-manager-actions/ldrop.desktop > $(DESTDIR)$(DATADIR)/file-manager/actions/ldrop.desktop
 	@# KDE Share menu
@@ -95,12 +126,12 @@ install:
 	@echo "Then log out and back in: the tray, the Plasma applet or GNOME extension, and the"
 	@echo "file manager entries start with the session."
 
-# Everything under ~/.local and ~/.config. The KDE Share menu plugin needs Qt's system plugin
-# directory, so it is left out here.
+# Everything under ~/.local and ~/.config. The KDE Share menu plugin and the native Nautilus
+# extension need system directories, so they are left out here.
 XDG_DATA_HOME   ?= $(HOME)/.local/share
 XDG_CONFIG_HOME ?= $(HOME)/.config
 USER_VARS = PREFIX=$(HOME)/.local DATADIR=$(XDG_DATA_HOME) SYSTEMDUSERDIR=$(XDG_DATA_HOME)/systemd/user \
-	AUTOSTARTDIR=$(XDG_CONFIG_HOME)/autostart PURPOSE=no
+	AUTOSTARTDIR=$(XDG_CONFIG_HOME)/autostart PURPOSE=no NAUTILUS=no
 
 install-user:
 	@test "$$(id -u)" != 0 || { echo "install-user is for your own account; use sudo make install for all users"; exit 1; }
@@ -117,6 +148,7 @@ uninstall:
 	rm -f $(DESTDIR)$(DATADIR)/kio/servicemenus/org.ldrop.Ldrop.share.desktop $(DESTDIR)$(DATADIR)/nautilus-python/extensions/ldrop.py
 	rm -f $(DESTDIR)$(DATADIR)/nemo/actions/ldrop.nemo_action $(DESTDIR)$(DATADIR)/file-manager/actions/ldrop.desktop
 	@if [ "$(PURPOSE)" = yes ]; then rm -fv $(DESTDIR)$(QT_PLUGINDIR)/kf6/purpose/ldropplugin.so; fi
+	@if [ "$(NAUTILUS)" = yes ] && [ -n "$(NAUTILUS_EXTDIR)" ]; then rm -fv $(DESTDIR)$(NAUTILUS_EXTDIR)/libldrop-nautilus.so; fi
 
 uninstall-user:
 	$(MAKE) --no-print-directory uninstall $(USER_VARS)

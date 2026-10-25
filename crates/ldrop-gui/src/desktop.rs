@@ -70,6 +70,10 @@ pub async fn first_run(conn: &Connection) -> Vec<&'static str> {
     let mut done: Vec<String> =
         std::fs::read_to_string(&record).unwrap_or_default().lines().map(str::to_owned).collect();
     let mut finished = Vec::new();
+    // The native Nautilus extension may have arrived after the script did; one entry is enough.
+    if integrate::nautilus_native_installed() && integrate::nautilus_script(true).is_ok_and(|c| c == Change::Done) {
+        tracing::info!("removed the Nautilus script: the native extension shows \"Send with ldrop\"");
+    }
     for step in [Step::GnomeExtension, Step::Thunar, Step::NautilusScript] {
         if done.iter().any(|d| d == step.name()) {
             continue;
@@ -161,9 +165,9 @@ impl Step {
                 if !integrate::on_path("nautilus") {
                     return Outcome::NotYet;
                 }
-                // nautilus-python loads integrations/nautilus/ldrop.py instead.
-                let extension = data_dirs().iter().any(|d| d.join("nautilus-python/extensions/ldrop.py").is_file());
-                if extension && integrate::nautilus_python_installed() {
+                // The native extension, or nautilus-python with ldrop.py, show the entry instead.
+                let python = data_dirs().iter().any(|d| d.join("nautilus-python/extensions/ldrop.py").is_file());
+                if integrate::nautilus_native_installed() || (python && integrate::nautilus_python_installed()) {
                     return Outcome::NotNeeded;
                 }
                 change(integrate::nautilus_script(false), &integrate::nautilus_script_file())

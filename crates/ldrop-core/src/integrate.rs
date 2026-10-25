@@ -5,8 +5,8 @@
 //! or remove them by hand.
 //!
 //! - Thunar reads custom actions only from `~/.config/Thunar/uca.xml`.
-//! - Nautilus without nautilus-python still runs scripts from `~/.local/share/nautilus/scripts`
-//!   (right-click → Scripts).
+//! - Nautilus without ldrop's native extension or nautilus-python still runs scripts from
+//!   `~/.local/share/nautilus/scripts` (right-click → Scripts).
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -139,9 +139,19 @@ fn write_executable(path: &Path, text: &str) -> io::Result<()> {
 /// Whether the nautilus-python extension is installed, which loads the richer entry from
 /// `integrations/nautilus/ldrop.py` instead of the script.
 pub fn nautilus_python_installed() -> bool {
+    nautilus_extension_exists("libnautilus-python.so")
+}
+
+/// Whether ldrop's native Nautilus extension (`integrations/nautilus/ldrop-nautilus.c`) is
+/// installed; it puts "Send with ldrop" in the menu itself, so the script is not needed.
+pub fn nautilus_native_installed() -> bool {
+    nautilus_extension_exists("libldrop-nautilus.so")
+}
+
+fn nautilus_extension_exists(name: &str) -> bool {
     ["/usr/lib", "/usr/lib64", "/usr/local/lib", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu"]
         .iter()
-        .any(|lib| Path::new(lib).join("nautilus/extensions-4/libnautilus-python.so").exists())
+        .any(|lib| Path::new(lib).join("nautilus/extensions-4").join(name).exists())
 }
 
 /// Whether `program` is on `$PATH`.

@@ -33,8 +33,9 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - a notification server, for the tray prompts;
   - Kirigami, for the share sheet (Arch `kirigami`, Debian/Ubuntu `qml6-module-org-kde-kirigami`).
   - Optional: Plasma 6 for the tray applet, GNOME 45 or later for the Quick Settings toggle,
-    nautilus-python for a top-level entry in Nautilus (without it, ldrop adds one under
-    *Scripts*).
+    the Nautilus extension headers (Arch: part of `nautilus`; Debian/Ubuntu
+    `libnautilus-extension-dev`) for *Send with ldrop* directly in Nautilus' menu. Without
+    them, nautilus-python does the same, and without that ldrop adds it under *Scripts*.
 
 ## Build
 
@@ -58,7 +59,8 @@ make install-user       # or: just for you, under ~/.local, no root
 That puts everything in place for every desktop: the programs, the systemd user unit and D-Bus
 service, the launcher and the tray autostart entry, the Plasma applet, the GNOME Shell
 extension, the "Send with ldrop" entries for Dolphin, Nautilus, Nemo, Caja and PCManFM-Qt, and
-the KDE Share menu plugin (system-wide install only). `make uninstall` (or `uninstall-user`)
+the KDE Share menu plugin. The native Nautilus extension and the Share menu plugin go into
+system directories, so `install-user` leaves them out. `make uninstall` (or `uninstall-user`)
 takes it all out again.
 
 A few things only exist per user. `ldrop-gui` does them once, the first time it starts in your
@@ -67,8 +69,9 @@ session, and leaves them alone afterwards if you undo them:
 - on GNOME, it turns on the ldrop extension;
 - with Thunar, it adds "Send with ldrop" to `~/.config/Thunar/uca.xml` (a backup goes next to
   it); `ldrop integrate thunar --remove` takes it out;
-- with Nautilus but without nautilus-python, it adds *Scripts → Send with ldrop*;
-  `ldrop integrate nautilus-script --remove` takes it out.
+- with Nautilus but neither ldrop's Nautilus extension nor nautilus-python, it adds
+  *Scripts → Send with ldrop*; `ldrop integrate nautilus-script --remove` takes it out. Once
+  the extension is installed, it removes the script again.
 
 **Upgrading from a manual install** (copied files from an older README): remove
 `~/.config/systemd/user/ldropd.service` and old copies in `~/.local/bin`,

@@ -576,19 +576,19 @@ ldrop integrate <thunar|nautilus-script> [--remove]   # per-user entries where n
 | Integration | Mechanism | Installed file(s) |
 |---|---|---|
 | Dolphin "Send with ldrop" | KIO service menu [K9] | `share/kio/servicemenus/org.ldrop.Ldrop.share.desktop` → `ldrop-gui --share %F` |
-| Nautilus | nautilus-python `MenuProvider` extension [K11] | `share/nautilus-python/extensions/ldrop.py` (package `ldrop-nautilus`) |
+| Nautilus (GNOME Files) | native `libnautilus-extension-4` menu provider (`integrations/nautilus/ldrop-nautilus.c`), a top-level item; built when the headers exist. Fallback: nautilus-python `MenuProvider` [K11]; never both | `$(pkg-config --variable=extensiondir libnautilus-extension-4)/libldrop-nautilus.so`, else `share/nautilus-python/extensions/ldrop.py` |
 | Nemo | Nemo action [K11] | `share/nemo/actions/ldrop.nemo_action` |
 | Caja, PCManFM-Qt | file-manager actions `.desktop` (DES-EMA) [K11], support per file manager verified in S0.7 | `share/file-manager/actions/ldrop.desktop` |
 | Thunar | custom action in per-user `~/.config/Thunar/uca.xml` [K11] (no system drop-in) | `ldrop integrate thunar` adds/removes it, with a backup |
 | KDE share menu | Purpose plugin [K10]: a small C++ plugin that starts `ldrop-gui --share` (later: `org.ldrop.Gui1.Share`) | `integrations/purpose/` (CMake) → KF6 Purpose plugin dir |
-| Nautilus without nautilus-python | Nautilus script [K11] | `~/.local/share/nautilus/scripts/Send with ldrop`, added by ldrop-gui on first start (`ldrop integrate nautilus-script`) |
+| Nautilus without either extension | Nautilus script [K11] | `~/.local/share/nautilus/scripts/Send with ldrop`, added by ldrop-gui on first start (`ldrop integrate nautilus-script`) |
 | "Open with…" (generic fallback, any file manager) | main `.desktop`, `Exec=ldrop-gui %F` (no files: tray; files: share sheet), MimeType `application/octet-stream` + common types, `InitialPreference=1`; never sets itself as default handler. Desktop actions *Visible to Everyone* / *Hidden* run `ldrop visible` / `ldrop hidden` | `share/applications/org.ldrop.Ldrop.desktop` |
 | Tray | KStatusNotifierItem / SNI [K8] (generic fallback); on Plasma a system-tray applet; on GNOME a Quick Settings toggle | in-app; `share/plasma/plasmoids/org.ldrop.visibility/`; `share/gnome-shell/extensions/ldrop@ldrop.org/` |
 | Autostart | XDG autostart `ldrop-gui --tray`, system-wide; users turn it off in their session settings | `/etc/xdg/autostart/org.ldrop.Ldrop.desktop` |
 | Install | `Makefile`: `make` (cargo + optional Purpose plugin), `make install` (PREFIX, DESTDIR), `make install-user` (~/.local), `uninstall` | — |
 | Software centers | AppStream metainfo [K14] | `share/metainfo/org.ldrop.Ldrop.metainfo.xml` |
 
-- Per-user steps that a system-wide install cannot do run once in `ldrop-gui` on first start (`src/desktop.rs`), recorded in `$XDG_STATE_HOME/ldrop/gui-setup` so a user's undo sticks: enable the GNOME Shell extension (`org.gnome.Shell.Extensions.EnableExtension`; GNOME finds new extensions at login, so the step waits until it does), add the Thunar action, add the Nautilus script when nautilus-python is missing.
+- Per-user steps that a system-wide install cannot do run once in `ldrop-gui` on first start (`src/desktop.rs`), recorded in `$XDG_STATE_HOME/ldrop/gui-setup` so a user's undo sticks: enable the GNOME Shell extension (`org.gnome.Shell.Extensions.EnableExtension`; GNOME finds new extensions at login, so the step waits until it does), add the Thunar action, add the Nautilus script when neither Nautilus extension is usable (and remove it once the native extension appears).
 - Every entry passes local paths. `ldrop-gui --share` converts them to `file://` URIs and forwards them to the running instance.
 - App ID `org.ldrop.Ldrop` is a **placeholder**; switch to a reverse-DNS domain the project controls before release. The D-Bus names change with it.
 
@@ -671,7 +671,7 @@ Run Owly's `owlyd` as the AWDL owner. netd then asks owlyd to release the card b
   - `ldrop`: daemons, CLI, TUI.
   - `ldrop-gui`: GUI, tray, desktop file, metainfo, Dolphin service menu, Nemo action, file-manager actions.
   - `ldrop-kde`: Purpose plugin.
-  - `ldrop-nautilus`: depends on `python-nautilus`.
+  - `ldrop-nautilus`: the native Nautilus extension (depends on `nautilus`).
 - GUI dependencies: `qt6-declarative`, `kirigami`, `kstatusnotifieritem`, `knotifications`, `ki18n`, `kcolorscheme`. Optional: `qqc2-desktop-style`, `breeze-icons`, `kimageformats` (JPEG2000 previews).
 - References: BlueZ, wpa_supplicant and NetworkManager D-Bus docs [K5].
 
