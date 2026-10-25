@@ -90,16 +90,11 @@ enum Command {
     /// Add "Send with ldrop" to a file manager that needs a per-user entry.
     Integrate {
         #[arg(value_enum)]
-        file_manager: FileManager,
+        file_manager: integrate::FileManager,
         /// Take the entry out again.
         #[arg(long)]
         remove: bool,
     },
-}
-
-#[derive(Clone, Copy, clap::ValueEnum)]
-enum FileManager {
-    Thunar,
 }
 
 #[derive(Args)]
@@ -216,7 +211,7 @@ async fn main() -> ExitCode {
             ConfigAction::Set { key, value } => commands::config_set(&key, &value),
             ConfigAction::Path => commands::config_path(),
         },
-        Command::Integrate { file_manager: FileManager::Thunar, remove } => integrate::thunar(remove),
+        Command::Integrate { file_manager, remove } => integrate::run(file_manager, remove),
     };
     match result {
         Ok(code) => ExitCode::from(code as u8),

@@ -8,6 +8,7 @@ pub mod config;
 pub mod dbus;
 pub mod history;
 pub mod hostname;
+pub mod integrate;
 pub mod model;
 pub mod paths;
 pub mod storage;

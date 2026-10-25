@@ -4,6 +4,7 @@
 //! the share sheet that file managers open. The main window comes later.
 
 mod app;
+mod desktop;
 mod notify;
 mod progress;
 mod share;
@@ -30,13 +31,16 @@ struct Args {
     /// exists, so it is also the default.
     #[arg(long)]
     tray: bool,
-    /// Show the tray icon on Plasma even when the ldrop applet is installed, which otherwise
-    /// takes its place in the system tray.
+    /// Show the tray icon even when the ldrop Plasma applet or GNOME Shell extension is
+    /// active, which otherwise takes its place.
     #[arg(long)]
     tray_icon: bool,
     /// Open the share sheet to send these files (paths or file:// URIs) to a nearby device.
     #[arg(long, num_args = 1.., value_name = "FILE")]
     share: Vec<String>,
+    /// Same as --share, so "Open with ldrop" works from any file manager.
+    #[arg(value_name = "FILE", conflicts_with = "share")]
+    files: Vec<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -47,8 +51,9 @@ fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .with_ansi(std::io::stderr().is_terminal())
         .init();
-    if !args.share.is_empty() {
-        let files = share_paths(&args.share)?;
+    let share = if args.share.is_empty() { &args.files } else { &args.share };
+    if !share.is_empty() {
+        let files = share_paths(share)?;
         std::process::exit(share::run(files));
     }
     tokio::runtime::Runtime::new().context("cannot start the async runtime")?.block_on(tray(args))
@@ -79,36 +84,22 @@ async fn tray(args: Args) -> anyhow::Result<()> {
         }
         Err(e) => return Err(e).context(format!("cannot claim {GUI_NAME}")),
     }
-    let tray_icon = args.tray_icon || !plasma_applet_installed();
-    if !tray_icon {
-        tracing::info!("the ldrop Plasma applet shows visibility in the system tray; no tray icon");
+    let set_up = desktop::first_run(&conn).await;
+    for step in &set_up {
+        tracing::info!("set up for this user: {step}");
     }
-    app::run(conn, tray_icon).await
-}
-
-/// Plasma applet ID, `packaging/plasma/org.ldrop.visibility`.
-const PLASMA_APPLET: &str = "org.ldrop.visibility";
-
-/// Whether this is a Plasma session with the ldrop applet installed.
-fn plasma_applet_installed() -> bool {
-    let plasma = std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d == "KDE"));
-    plasma
-        && data_dirs()
-            .iter()
-            .any(|dir| dir.join("plasma/plasmoids").join(PLASMA_APPLET).join("metadata.json").is_file())
-}
-
-/// `$XDG_DATA_HOME` and `$XDG_DATA_DIRS`, with their defaults.
-fn data_dirs() -> Vec<PathBuf> {
-    let home = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
-    let system = std::env::var("XDG_DATA_DIRS")
-        .ok()
-        .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-    home.into_iter().chain(system.split(':').map(PathBuf::from).filter(|p| p.is_absolute())).collect()
+    let widget = if args.tray_icon {
+        None
+    } else if set_up.contains(&desktop::GNOME_EXTENSION_STEP) {
+        // GNOME reports it active only a moment later.
+        Some(desktop::GNOME_WIDGET)
+    } else {
+        desktop::native_widget(&conn).await
+    };
+    if let Some(widget) = widget {
+        tracing::info!("{widget} shows visibility in the panel; no tray icon");
+    }
+    app::run(conn, widget.is_none()).await
 }
 
 /// Opens a file, folder or URL with the desktop's default application.

@@ -444,7 +444,7 @@ There is no auto-accept flag, by design.
 Additional commands:
 ```
 ldrop tui                     # alias for ldrop-tui
-ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   # per-user installs where no system drop-in exists (implemented: thunar)
+ldrop integrate <thunar|nautilus-script> [--remove]   # per-user entries where no system drop-in exists; ldrop-gui adds them once on first start
 ```
 
 ### 11.3 TUI (`ldrop-tui`)
@@ -526,6 +526,8 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
 
 *Plasma applet.* On Plasma, a native system-tray applet (`packaging/plasma/org.ldrop.visibility`, plain QML on `org.kde.plasma.workspace.dbus`, no compiled code) replaces the SNI icon: its popup is anchored to the tray like the Bluetooth and Network applets and offers Hidden / Everyone for 10 minutes with a live countdown, plus the download folder. `X-Plasma-DBusActivationService: org.ldrop.Ldrop1` makes the tray load it only while ldropd runs. `ldrop-gui` skips its own SNI icon in a Plasma session when the applet is installed (`--tray-icon` overrides) and keeps handling notifications.
 
+*GNOME Shell extension.* GNOME has no SNI host by default, so `integrations/gnome-shell/ldrop@ldrop.org` (ESM, GNOME 45+) adds a `QuickMenuToggle` to Quick Settings: click toggles Hidden ↔ Everyone (a direct `SetVisibility` call, which D-Bus-activates ldropd), the menu offers Hidden / Everyone for 10 minutes with a countdown and Open Download Folder, and a top-bar eye shows while visible. Its `Gio.DBusProxy` uses `DO_NOT_AUTO_START`, so the shell starting does not start ldropd; the subtitle reads "Off" until it runs. `ldrop-gui` skips its SNI icon when GNOME reports the extension active.
+
 *Share sheet (M4, first window).* `ldrop-gui --share FILE…|URI…` runs the sheet in its own process: a `QApplication` plus `QQmlApplicationEngine` (`src/share/app.cpp`), the Kirigami page in `qml/ShareSheet.qml`, and one cxx-qt QObject (`src/share/bridge.rs`) whose device rows cross as a JSON string. Discovery and sends run on a tokio runtime in a second thread and post updates with `CxxQtThread::queue`. It does not forward to the tray process over `org.ldrop.Gui1` yet; each share opens its own sheet, and closing it leaves started transfers running in ldropd. The style rule of §11.5 is applied in `app.cpp`: `org.kde.desktop` only off Plasma and when neither `QT_QUICK_CONTROLS_STYLE` nor `QT_QPA_PLATFORMTHEME` is set.
 
 **Accessibility & i18n.**
@@ -579,11 +581,14 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
 | Caja, PCManFM-Qt | file-manager actions `.desktop` (DES-EMA) [K11], support per file manager verified in S0.7 | `share/file-manager/actions/ldrop.desktop` |
 | Thunar | custom action in per-user `~/.config/Thunar/uca.xml` [K11] (no system drop-in) | `ldrop integrate thunar` adds/removes it, with a backup |
 | KDE share menu | Purpose plugin [K10]: a small C++ plugin that starts `ldrop-gui --share` (later: `org.ldrop.Gui1.Share`) | `integrations/purpose/` (CMake) → KF6 Purpose plugin dir |
-| "Open with…" | `.desktop`, `Exec=ldrop-gui --share %U`, MimeType `application/octet-stream` + common types; never sets itself as default handler | `share/applications/org.ldrop.Ldrop.desktop` |
-| Tray | KStatusNotifierItem / SNI [K8]; on Plasma a system-tray applet | in-app; `share/plasma/plasmoids/org.ldrop.visibility/` |
-| Autostart (opt-in) | XDG autostart `ldrop-gui --tray` | written to `~/.config/autostart/` only when enabled |
+| Nautilus without nautilus-python | Nautilus script [K11] | `~/.local/share/nautilus/scripts/Send with ldrop`, added by ldrop-gui on first start (`ldrop integrate nautilus-script`) |
+| "Open with…" (generic fallback, any file manager) | main `.desktop`, `Exec=ldrop-gui %F` (no files: tray; files: share sheet), MimeType `application/octet-stream` + common types, `InitialPreference=1`; never sets itself as default handler. Desktop actions *Visible to Everyone* / *Hidden* run `ldrop visible` / `ldrop hidden` | `share/applications/org.ldrop.Ldrop.desktop` |
+| Tray | KStatusNotifierItem / SNI [K8] (generic fallback); on Plasma a system-tray applet; on GNOME a Quick Settings toggle | in-app; `share/plasma/plasmoids/org.ldrop.visibility/`; `share/gnome-shell/extensions/ldrop@ldrop.org/` |
+| Autostart | XDG autostart `ldrop-gui --tray`, system-wide; users turn it off in their session settings | `/etc/xdg/autostart/org.ldrop.Ldrop.desktop` |
+| Install | `Makefile`: `make` (cargo + optional Purpose plugin), `make install` (PREFIX, DESTDIR), `make install-user` (~/.local), `uninstall` | — |
 | Software centers | AppStream metainfo [K14] | `share/metainfo/org.ldrop.Ldrop.metainfo.xml` |
 
+- Per-user steps that a system-wide install cannot do run once in `ldrop-gui` on first start (`src/desktop.rs`), recorded in `$XDG_STATE_HOME/ldrop/gui-setup` so a user's undo sticks: enable the GNOME Shell extension (`org.gnome.Shell.Extensions.EnableExtension`; GNOME finds new extensions at login, so the step waits until it does), add the Thunar action, add the Nautilus script when nautilus-python is missing.
 - Every entry passes local paths. `ldrop-gui --share` converts them to `file://` URIs and forwards them to the running instance.
 - App ID `org.ldrop.Ldrop` is a **placeholder**; switch to a reverse-DNS domain the project controls before release. The D-Bus names change with it.
 

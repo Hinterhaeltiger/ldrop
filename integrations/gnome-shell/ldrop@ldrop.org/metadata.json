@@ -1,0 +1,8 @@
+{
+    "uuid": "ldrop@ldrop.org",
+    "name": "ldrop",
+    "description": "Quick Settings toggle for ldrop: choose who nearby can send you files with Quick Share and AirDrop.",
+    "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+    "url": "https://github.com/Hinterhaeltiger/ldrop",
+    "version-name": "0.1"
+}

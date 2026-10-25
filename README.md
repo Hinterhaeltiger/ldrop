@@ -13,8 +13,9 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - `ldrop` command;
   - `ldrop-tui` terminal interface;
   - `ldrop-gui` for the tray and desktop notifications (Accept/Decline, progress);
-  - a share sheet window, opened from file managers ("Send with ldrop") and the KDE Share menu;
-  - a Plasma system-tray applet.
+  - a share sheet window, opened from file managers ("Send with ldrop", or "Open with ldrop"
+    in any of them) and the KDE Share menu;
+  - a Plasma system-tray applet and a GNOME Quick Settings toggle.
 - **Not yet:** AirDrop, Wi-Fi Direct hosting, and the main GUI window.
 
 ## Requirements
@@ -31,57 +32,63 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - NetworkManager, for Wi-Fi switching (plus dnsmasq for hosting a hotspot);
   - a notification server, for the tray prompts;
   - Kirigami, for the share sheet (Arch `kirigami`, Debian/Ubuntu `qml6-module-org-kde-kirigami`).
-  - Optional: Plasma 6, for the tray applet.
+  - Optional: Plasma 6 for the tray applet, GNOME 45 or later for the Quick Settings toggle,
+    nautilus-python for a top-level entry in Nautilus (without it, ldrop adds one under
+    *Scripts*).
 
 ## Build
 
 ```sh
 git clone https://github.com/Hinterhaeltiger/ldrop
 cd ldrop
-cargo build --release
+make
 ```
 
-This produces `ldropd` (daemon), `ldrop` (CLI), `ldrop-tui` and `ldrop-gui` in
-`target/release/`.
+This builds `ldropd` (daemon), `ldrop` (CLI), `ldrop-tui` and `ldrop-gui` in `target/release/`,
+and the KDE Share menu plugin when CMake and Purpose are installed (otherwise it says so and
+skips it). Build as your user, not as root.
 
 ## Install
 
-### System-wide
-
 ```sh
-sudo install -Dm755 target/release/{ldropd,ldrop,ldrop-tui,ldrop-gui} -t /usr/bin/
-sudo install -Dm644 packaging/systemd/user/ldropd.service -t /usr/lib/systemd/user/
-sudo install -Dm644 packaging/dbus/services/org.ldrop.Ldrop1.service -t /usr/share/dbus-1/services/
-sudo install -Dm644 packaging/desktop/org.ldrop.Ldrop.desktop -t /usr/share/applications/
+sudo make install       # for all users, under /usr/local (PREFIX=/usr for /usr)
+make install-user       # or: just for you, under ~/.local, no root
 ```
 
-### For your user only (no root)
+That puts everything in place for every desktop: the programs, the systemd user unit and D-Bus
+service, the launcher and the tray autostart entry, the Plasma applet, the GNOME Shell
+extension, the "Send with ldrop" entries for Dolphin, Nautilus, Nemo, Caja and PCManFM-Qt, and
+the KDE Share menu plugin (system-wide install only). `make uninstall` (or `uninstall-user`)
+takes it all out again.
 
-The unit files point at `/usr/bin`, so rewrite the path while copying them:
+A few things only exist per user. `ldrop-gui` does them once, the first time it starts in your
+session, and leaves them alone afterwards if you undo them:
 
-```sh
-install -Dm755 target/release/{ldropd,ldrop,ldrop-tui,ldrop-gui} -t ~/.local/bin/
-mkdir -p ~/.config/systemd/user ~/.local/share/dbus-1/services ~/.local/share/applications
-sed "s|/usr/bin|$HOME/.local/bin|" packaging/systemd/user/ldropd.service > ~/.config/systemd/user/ldropd.service
-sed "s|/usr/bin|$HOME/.local/bin|" packaging/dbus/services/org.ldrop.Ldrop1.service \
-    > ~/.local/share/dbus-1/services/org.ldrop.Ldrop1.service
-sed "s|^Exec=ldrop-gui|Exec=$HOME/.local/bin/ldrop-gui|" packaging/desktop/org.ldrop.Ldrop.desktop \
-    > ~/.local/share/applications/org.ldrop.Ldrop.desktop
-systemctl --user daemon-reload
-```
+- on GNOME, it turns on the ldrop extension;
+- with Thunar, it adds "Send with ldrop" to `~/.config/Thunar/uca.xml` (a backup goes next to
+  it); `ldrop integrate thunar --remove` takes it out;
+- with Nautilus but without nautilus-python, it adds *Scripts → Send with ldrop*;
+  `ldrop integrate nautilus-script --remove` takes it out.
 
-`~/.local/bin` must be on your `PATH` for the `ldrop` commands.
+**Upgrading from a manual install** (copied files from an older README): remove
+`~/.config/systemd/user/ldropd.service` and old copies in `~/.local/bin`,
+`~/.local/share/dbus-1/services` and `~/.local/share/applications`. Files there take precedence
+over the ones `make install` puts in `/usr/local`.
 
 ## Set up
 
-1. **Start the daemon.** Do it now and with every login:
+1. **Start the daemon** now and with every login:
 
    ```sh
+   systemctl --user daemon-reload
    systemctl --user enable --now ldropd
    ```
 
-   Any frontend also starts it through D-Bus on demand.
-2. **Open the firewall** if you run one (ufw, firewalld):
+   ldrop-gui and the panel widgets also start it through D-Bus when needed.
+2. **Log out and back in.** The tray (or the Plasma applet, or GNOME's Quick Settings toggle)
+   and the file manager entries are there in the new session. GNOME only picks up new
+   extensions at login.
+3. **Open the firewall** if you run one (ufw, firewalld):
    - Phones connect to this computer to send, so receiving needs inbound TCP on the Quick
      Share port, plus mDNS (5353/udp).
    - Transfers that start over Bluetooth move to the LAN on the next port up.
@@ -93,42 +100,7 @@ systemctl --user daemon-reload
    ```
 
    Sending only needs outbound connections.
-3. **Tray and notifications.** Start `ldrop-gui`. To start it with every session, add it to
-   autostart:
-
-   ```sh
-   mkdir -p ~/.config/autostart
-   cp ~/.local/share/applications/org.ldrop.Ldrop.desktop ~/.config/autostart/   # or /usr/share/applications/…
-   ```
-4. **Plasma only: the tray applet.** Install it for your user:
-
-   ```sh
-   kpackagetool6 -t Plasma/Applet -i packaging/plasma/org.ldrop.visibility   # -u to update, -r org.ldrop.visibility to remove
-   systemctl --user restart plasma-plasmashell                                # or log in again
-   ```
-5. **"Send with ldrop" in your file manager.** Copy the entry for yours (for all users, use
-   `/usr/share/…` instead of `~/.local/share/…`):
-
-   ```sh
-   # Dolphin (per-user service menus must be executable)
-   install -Dm755 integrations/dolphin/org.ldrop.Ldrop.share.desktop -t ~/.local/share/kio/servicemenus/
-   # Nautilus (needs nautilus-python), then: nautilus -q
-   install -Dm644 integrations/nautilus/ldrop.py -t ~/.local/share/nautilus-python/extensions/
-   # Nemo
-   install -Dm644 integrations/nemo/ldrop.nemo_action -t ~/.local/share/nemo/actions/
-   # Caja (with caja-actions) and PCManFM-Qt
-   install -Dm644 integrations/file-manager-actions/ldrop.desktop -t ~/.local/share/file-manager/actions/
-   # Thunar keeps custom actions in ~/.config/Thunar/uca.xml; this adds ours (--remove takes it out)
-   ldrop integrate thunar
-   ```
-6. **KDE Share menu.** This puts ldrop in the Share menu of Dolphin, Gwenview, Spectacle and
-   other KDE apps. It is a small Qt plugin, installed next to KDE's own:
-
-   ```sh
-   cmake -S integrations/purpose -B build/purpose -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release
-   cmake --build build/purpose && sudo cmake --install build/purpose
-   ```
-7. **Check the hardware.** `ldrop doctor` shows which transports this machine supports, and why
+4. **Check the hardware.** `ldrop doctor` shows which transports this machine supports, and why
    others are missing.
 
 ## Use
@@ -223,11 +195,20 @@ notifications:
   On Plasma it is a native job in the notification area instead.
 - **Done:** "Received 2 files from Pixel 9" with **Open** and **Show in folder**.
 
-**Plasma.** The tray applet (Set up, step 4) takes the place of the tray icon. Click it for a
-popup with *Hidden* / *Everyone for 10 minutes*, the time left, and the download folder;
-right-click has the same. It shows up while ldropd runs. With the applet installed,
-`ldrop-gui` shows no tray icon of its own on Plasma and only handles notifications;
-`ldrop-gui --tray-icon` brings the icon back.
+**Plasma.** The tray applet takes the place of the tray icon. Click it for a popup with
+*Hidden* / *Everyone for 10 minutes*, the time left, and the download folder; right-click has
+the same. It shows up while ldropd runs.
+
+**GNOME.** GNOME has no tray without an extension, so ldrop brings its own: an *ldrop* toggle in
+Quick Settings. Click it to switch between hidden and visible to everyone (it starts ldropd if
+needed); the arrow opens *Hidden* / *Everyone for 10 minutes* with the time left, and *Open
+Download Folder*. An eye icon sits in the top bar while this computer is visible. Turn it off in
+the Extensions app like any other.
+
+With the applet or the extension active, `ldrop-gui` shows no tray icon of its own and only
+handles notifications; `ldrop-gui --tray-icon` brings the icon back. Other desktops and window
+managers get the tray icon. The launcher entry also has *Visible to Everyone for 10 Minutes* and
+*Hidden* in its right-click menu, in docks and app menus that show actions.
 
 Only one `ldrop-gui` runs per session. The prompts need a notification server with actions:
 all desktops have one, and on window managers mako, dunst or swaync do. Without one,
@@ -235,8 +216,14 @@ all desktops have one, and on window managers mako, dunst or swaync do. Without 
 
 ## Share sheet
 
-`ldrop-gui --share FILE…` opens a window for sending, which is what the file manager entries and
-the KDE Share menu call:
+`ldrop-gui --share FILE…` (or `ldrop-gui FILE…`) opens a window for sending. You get there from:
+
+- *Send with ldrop* in the right-click menu of Dolphin, Nautilus, Nemo, Caja, Thunar and
+  PCManFM-Qt;
+- *Share → Send with ldrop* in KDE apps (Dolphin, Gwenview, Spectacle, Okular, …);
+- *Open With → ldrop* in any file manager, for the ones above and all others.
+
+In the window:
 
 - Nearby devices appear as they are found, with their platform and protocol.
 - **Send** starts the transfer. The row then shows the PIN to compare with the phone, waits for
@@ -280,9 +267,10 @@ name. The design and milestones are in [SPEC.md](SPEC.md).
 | `crates/ldrop-cli` | `ldrop` command |
 | `crates/ldrop-tui` | `ldrop-tui` terminal interface |
 | `crates/ldrop-gui` | `ldrop-gui`: tray icon, notifications, share sheet (Rust + cxx-qt, QML in `qml/`) |
-| `integrations/` | File manager entries (Dolphin, Nautilus, Nemo, Caja, PCManFM-Qt) and the KDE Share menu plugin |
+| `integrations/` | File manager entries (Dolphin, Nautilus, Nemo, Caja, PCManFM-Qt), the KDE Share menu plugin, the GNOME Shell extension |
 | `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)) |
-| `packaging/` | systemd user unit, D-Bus activation file, desktop entry, Plasma tray applet, API introspection XML |
+| `packaging/` | systemd user unit, D-Bus activation file, desktop and autostart entries, Plasma tray applet, API introspection XML |
+| `Makefile` | Build and install everything (`make`, `make install`, `make install-user`) |
 
 ### Tests
 

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ldrop
+Comment=Tray and notifications for Quick Share and AirDrop
+Exec=ldrop-gui --tray
+Icon=document-share
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-UsesNotifications=true
+X-KDE-autostart-phase=2

@@ -3,11 +3,27 @@ Type=Application
 Name=ldrop
 GenericName=Nearby Share
 Comment=Share files with nearby Android and Apple devices
-Exec=ldrop-gui --tray
+# No files: the tray and notifications. With files ("Open with ldrop" in any file manager):
+# the share sheet.
+Exec=ldrop-gui %F
 Icon=document-share
 Terminal=false
 Categories=Network;FileTransfer;
-Keywords=Quick Share;AirDrop;Nearby;Share;
+Keywords=Quick Share;AirDrop;Nearby;Share;Send;
+# Listed so file managers offer "Open with ldrop"; ldrop never asks to be the default.
+MimeType=application/octet-stream;text/plain;image/jpeg;image/png;image/gif;image/webp;image/heic;image/heif;image/avif;image/svg+xml;image/tiff;video/mp4;video/quicktime;video/webm;video/x-matroska;audio/mpeg;audio/ogg;audio/flac;audio/mp4;audio/x-wav;application/pdf;application/zip;application/x-7z-compressed;application/x-tar;application/gzip;application/vnd.android.package-archive;application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.spreadsheet;application/vnd.oasis.opendocument.presentation;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.openxmlformats-officedocument.presentationml.presentation;application/msword;text/csv;text/html;
+InitialPreference=1
 StartupNotify=false
 X-GNOME-UsesNotifications=true
 X-KDE-StartupNotify=false
+Actions=visible;hidden;
+
+[Desktop Action visible]
+Name=Visible to Everyone for 10 Minutes
+Icon=view-visible
+Exec=ldrop visible
+
+[Desktop Action hidden]
+Name=Hidden
+Icon=view-hidden
+Exec=ldrop hidden

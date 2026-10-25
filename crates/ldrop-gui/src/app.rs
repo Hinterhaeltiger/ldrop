@@ -71,7 +71,7 @@ enum End {
     Lost(String),
 }
 
-/// `tray_icon`: whether to show the tray icon (the Plasma applet may stand in for it).
+/// `tray_icon`: whether to show the tray icon (the Plasma applet or GNOME Shell extension may stand in for it).
 pub async fn run(conn: Connection, tray_icon: bool) -> anyhow::Result<()> {
     let (actions_tx, mut actions) = mpsc::unbounded_channel();
     let tray = Tray::start(&conn, view(&State::default()), actions_tx, tray_icon).await?;
