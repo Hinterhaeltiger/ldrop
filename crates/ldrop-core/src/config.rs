@@ -62,6 +62,9 @@ pub struct QuickShareConfig {
     pub tcp_port: u16,
     pub mediums: Vec<Medium>,
     pub prompt_timeout_secs: u32,
+    /// Lets a transfer over Bluetooth move the Wi-Fi card to a phone's hotspot, or host one,
+    /// although that drops the current Wi-Fi connection for its duration (SPEC §5.4).
+    pub allow_wifi_switch: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,6 +128,7 @@ impl Default for QuickShareConfig {
             tcp_port: 0,
             mediums: vec![Medium::Lan, Medium::Wfd, Medium::Hotspot, Medium::Bt],
             prompt_timeout_secs: 60,
+            allow_wifi_switch: false,
         }
     }
 }
@@ -354,6 +358,7 @@ enabled = true
 tcp_port = 0
 mediums = ["lan", "wfd", "hotspot", "bt"]
 prompt_timeout_secs = 60
+allow_wifi_switch = false
 
 [airdrop]
 enabled = true

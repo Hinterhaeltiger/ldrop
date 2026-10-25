@@ -8,8 +8,8 @@ receiving from Quick Share devices on the same network works from the CLI, the T
 tray: discovery over mDNS with the BLE wake, PIN, files, text and links, decline, cancel from
 either side. Incoming requests show up as desktop notifications with Accept/Decline, and
 progress as a notification. Without a shared network, Quick Share also runs over Bluetooth
-(slow, but no Wi-Fi needed). AirDrop, the switch to peer-to-peer Wi-Fi and the GUI window are
-later milestones. To try the frontends without phones, run the daemon with simulated peers
+and moves to Wi-Fi once the transfer starts (the same network, or a hotspot when allowed).
+AirDrop, hosting Wi-Fi Direct groups and the GUI window are later milestones. To try the frontends without phones, run the daemon with simulated peers
 (`--dev-sim`).
 
 ## Layout
@@ -17,7 +17,7 @@ later milestones. To try the frontends without phones, run the daemon with simul
 | Path | What |
 |---|---|
 | `crates/ldrop-core` | Shared types, config, history, capability rules, D-Bus wire types |
-| `crates/ldrop-wifi` | nl80211 Wi-Fi capability probe |
+| `crates/ldrop-wifi` | nl80211 Wi-Fi capability probe, NetworkManager hotspot sessions |
 | `crates/ldrop-ble` | BlueZ capability probe, BLE advertisements |
 | `crates/ldrop-bt` | Bluetooth Classic through BlueZ: RFCOMM service, discovery, adapter visibility |
 | `crates/ldrop-quickshare` | Quick Share protocol: UKEY2, SecureMessage, frames, send and receive sessions |
@@ -52,11 +52,12 @@ With a phone on the same network, run `target/debug/ldropd` without `--dev-sim`,
 `ldrop visible` + `ldrop receive` to receive, or `ldrop send --to "<phone name>" FILE…` to send.
 
 **Firewall.** Phones connect to this computer to send, so receiving needs inbound TCP on the
-Quick Share port and mDNS (5353/udp). With a firewall, pin the port and open it, for example:
+Quick Share port and mDNS (5353/udp). Transfers that start over Bluetooth move to the LAN on
+the next port up. With a firewall, pin the port and open both, for example:
 
 ```sh
-ldrop config set quickshare.tcp_port 47000            # then restart ldropd
-sudo ufw allow 47000/tcp && sudo ufw allow 5353/udp    # or: firewall-cmd --add-port=…
+ldrop config set quickshare.tcp_port 47000                  # then restart ldropd
+sudo ufw allow 47000:47001/tcp && sudo ufw allow 5353/udp    # or: firewall-cmd --add-port=…
 ```
 
 Sending only needs outbound connections.
@@ -71,6 +72,13 @@ it on). It is slow, about 100–200 KB/s, so it suits photos and documents more 
   and visibility back; after a crash, the next start does.
 - *Sending:* `ldrop devices` also lists phones that are visible over Bluetooth. ldrop uses the
   LAN when the device is there too, and Bluetooth otherwise.
+- *Faster after the start:* once a transfer over 1 MB is accepted, the connection moves from
+  Bluetooth to Wi-Fi if it can. If both are on the same network, that happens on its own. Moving
+  to a phone's hotspot, or hosting one for the phone, takes the computer off its current Wi-Fi
+  network for the duration of the transfer, so it is off by default:
+  `ldrop config set quickshare.allow_wifi_switch true`. ldrop puts the old network back
+  afterwards, and NetworkManager does so even if ldropd crashes. This needs NetworkManager,
+  and dnsmasq for hosting.
 
 To use only one of them: `ldrop config set quickshare.mediums lan` (or `bt`; the default is
 `lan,wfd,hotspot,bt`), then restart ldropd.

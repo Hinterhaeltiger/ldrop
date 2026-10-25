@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Wi-Fi capability probe for `ldrop doctor` (SPEC §3.5): sysfs for card identity, nl80211 for
-//! interface types, combinations, current channel and regulatory flags. Read-only.
+//! interface types, combinations, current channel and regulatory flags. Read-only. Temporary
+//! networks for the bandwidth upgrade go through NetworkManager ([`nm`]).
+
+pub mod nm;
 
 use std::collections::BTreeMap;
 use std::fs;

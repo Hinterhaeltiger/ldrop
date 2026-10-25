@@ -1050,9 +1050,12 @@ dependencies = [
  "futures-util",
  "ldrop-core",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "wl-nl80211",
+ "zbus",
 ]
 
 [[package]]

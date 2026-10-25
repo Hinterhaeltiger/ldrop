@@ -1,6 +1,6 @@
 [package]
 name = "ldrop-wifi"
-description = "ldrop Wi-Fi capability probe (nl80211, sysfs)"
+description = "ldrop Wi-Fi: capability probe (nl80211, sysfs), temporary networks (NetworkManager)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,11 +10,14 @@ rust-version.workspace = true
 futures-util.workspace = true
 ldrop-core.workspace = true
 tokio.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 wl-nl80211.workspace = true
+zbus.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+tracing-subscriber.workspace = true

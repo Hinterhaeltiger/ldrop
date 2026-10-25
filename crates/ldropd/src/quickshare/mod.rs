@@ -5,6 +5,7 @@
 //! [`bluetooth`].
 
 mod bluetooth;
+mod upgrade;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -340,10 +341,10 @@ struct Incoming {
 
 impl Incoming {
     async fn serve(s: Arc<Shared>, qs: Arc<Backend>, stream: impl Stream, origin: Origin, medium: QsMedium) {
+        let link = link(&s, medium).await;
         let cancel = CancellationToken::new();
         let mut this = Incoming { s, qs, origin, cancel: cancel.clone(), id: None, layout: (0, 0), accepted: None };
         let (tx, rx) = mpsc::channel(16);
-        let link = Link::fixed(medium);
         let (result, ()) = tokio::join!(receive::receive(stream, &link, tx, cancel), this.handle(rx));
         this.finish(result).await;
     }
@@ -497,6 +498,14 @@ impl Incoming {
             item.text = Some(wifi.password);
         }
         Ok(items)
+    }
+}
+
+/// Bluetooth connections may move to Wi-Fi (SPEC §5.4); the others stay where they are.
+async fn link(s: &Shared, medium: QsMedium) -> Link {
+    match medium {
+        QsMedium::Bluetooth => Link { medium, upgrader: upgrade::prepare(s).await },
+        _ => Link::fixed(medium),
     }
 }
 
@@ -817,7 +826,7 @@ async fn run_outgoing(
             }
         }
     };
-    let link = Link::fixed(medium);
+    let link = link(&s, medium).await;
     let (result, ()) = tokio::join!(send::send(stream, &local, &link, outgoing, tx, cancel), events);
     match result {
         Ok(SendOutcome::Completed) => {

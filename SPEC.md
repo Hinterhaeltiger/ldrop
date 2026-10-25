@@ -269,6 +269,12 @@ Port from **rquickshare `core_lib`** (Rust, GPL-3.0; LAN + BLE wake only) [R42].
 - NearDrop never worked out the switch-over sequence [R43]. **S0.4 must derive it from google/nearby** [R44]: the upgrade-path frames, client introduction, and the prior-channel close handshake. Output: `docs/research/quickshare-upgrade.md`.
 - Mediums ldrop offers, in order: `lan` (same subnet) → `wfd` (Linux as group owner) → `hotspot` (only if the interface combination allows STA+AP; otherwise opt-in like exclusive mode) → stay on `bt`.
 - When the phone offers hotspot or Wi-Fi Direct credentials, netd joins with a **temporary, non-autoconnect** NetworkManager profile. Afterwards it deletes the profile and restores the previous connection, including after a crash.
+- *Implementation note (M5):*
+  - Only connections that start on Bluetooth are upgraded; LAN connections are already fast.
+  - **Wi-Fi LAN:** offered when the peer's IP (from its connection request) is in one of our IPv4 subnets; joined whenever the phone offers it. The listener uses `quickshare.tcp_port + 1` when the port is pinned, so the firewall rule is predictable.
+  - **Hotspot / Wi-Fi Direct** go through NetworkManager from ldropd itself (`ldrop-wifi::nm`); the separate netd is deferred to M6, where the Apple link needs root anyway. Profiles use `persist = volatile` and `bind-activation = dbus-client`, so a crash takes the network down and deletes the profile; the previous connection is re-activated when the session ends. Joining is a WPA2 client with `hidden`, `never-default` and IPv4 only; hosting is a 2.4 GHz WPA2 AP with `ipv4.method shared` (needs dnsmasq), SSID `DIRECT-xx-ldrop`, random 16-character passphrase.
+  - Both interrupt the current Wi-Fi connection on cards without a separate AP interface, so they need `quickshare.allow_wifi_switch = true` unless the card is not connected. NetworkManager's polkit rules allow this from an active local session, not from ssh.
+  - ldrop does not host Wi-Fi Direct groups (not offered), and joins Wi-Fi Direct groups as a plain WPA2 client.
 
 ### 5.5 Samsung
 Samsung's Quick Share has a vendor-ID TLV [R43] and has broken rquickshare before [R42]. Add Samsung to the HIL matrix (§17).
@@ -589,6 +595,7 @@ enabled = true
 tcp_port = 0                     # 0 = random; fixed eases firewalls
 mediums = ["lan", "wfd", "hotspot", "bt"]
 prompt_timeout_secs = 60
+allow_wifi_switch = false        # Bluetooth transfers may move the Wi-Fi card to a phone's hotspot or host one
 
 [airdrop]
 enabled = true
