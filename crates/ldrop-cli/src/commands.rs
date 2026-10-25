@@ -227,3 +227,12 @@ pub fn config_path() -> CmdResult {
     println!("{}", Paths::from_env().config_file.display());
     Ok(Exit::Ok)
 }
+
+/// Replaces this process with `ldrop-tui`, preferring the one installed next to `ldrop`.
+pub fn tui(args: &[String]) -> CmdResult {
+    use std::os::unix::process::CommandExt;
+    let sibling = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join("ldrop-tui")));
+    let program = sibling.filter(|p| p.exists()).unwrap_or_else(|| "ldrop-tui".into());
+    let err = std::process::Command::new(&program).args(args).exec();
+    Err(Fail::new(Exit::Error, format!("cannot start {}: {err}", program.display())))
+}

@@ -62,8 +62,9 @@ trait Notifications {
 }
 
 /// Asks the user about incoming transfer `id`, which must be in `AwaitingAcceptance` with its
-/// `deadline` set. Emits `IncomingRequest` first.
-pub async fn ask(s: &Arc<Shared>, id: u32) -> Decision {
+/// `deadline` set. Emits `IncomingRequest` first. `withdrawn` resolving (the sender gave up)
+/// ends the prompt as `Cancelled`.
+pub async fn ask(s: &Arc<Shared>, id: u32, withdrawn: impl Future<Output = ()>) -> Decision {
     let (tx, rx) = oneshot::channel();
     let Some((deadline, cancel, info)) = ({
         let mut st = s.state();
@@ -105,6 +106,7 @@ pub async fn ask(s: &Arc<Shared>, id: u32) -> Decision {
     let decision = tokio::select! {
         biased;
         _ = cancel.cancelled() => Decision::Cancelled,
+        () = withdrawn => Decision::Cancelled,
         answer = rx => match answer {
             Ok(true) => Decision::Accept,
             _ => Decision::Reject,

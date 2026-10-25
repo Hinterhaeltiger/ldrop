@@ -10,6 +10,7 @@ pub mod history;
 pub mod hostname;
 pub mod model;
 pub mod paths;
+pub mod storage;
 pub mod time;
 pub mod uri;
 

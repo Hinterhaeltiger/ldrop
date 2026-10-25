@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                           │
+│                                                                              │
+│ Sending 2 files — pick a device and press Enter                              │
+│                                                                              │
+│ ▸ Pixel 9 Pro                      phone    Android  Quick Share             │
+│   Galaxy Tab S9                    tablet   Android  Quick Share             │
+│   Anna's iPhone                    phone    Apple    AirDrop                 │
+│                                                                              │
+│ Searching…                                                                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────┘

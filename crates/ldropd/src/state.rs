@@ -2,7 +2,7 @@
 //! Daemon-wide state shared by all D-Bus objects and background tasks.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
 use ldrop_core::capabilities::DoctorReport;
@@ -14,6 +14,7 @@ use ldrop_core::{Device, Visibility};
 use tokio::sync::watch;
 use zbus::{Connection, OwnedObjectPath};
 
+use crate::quickshare;
 use crate::transfer::TransferRecord;
 
 /// How the daemon is started.
@@ -25,9 +26,11 @@ pub struct Options {
     pub sim: bool,
     /// Probe real hardware for `Capabilities`. Off in tests.
     pub probe_hardware: bool,
+    /// Run the protocol backends (listeners, mDNS, BLE). Off in tests.
+    pub network: bool,
 }
 
-/// What backends react to (M2+): current visibility and when it expires (unix µs, 0 = never).
+/// What backends react to: current visibility and when it expires (unix µs, 0 = never).
 pub type VisibilityState = (Visibility, u64);
 
 pub struct Shared {
@@ -35,7 +38,10 @@ pub struct Shared {
     pub paths: Paths,
     pub sim: bool,
     pub probe_hardware: bool,
+    pub network: bool,
     pub visibility_tx: watch::Sender<VisibilityState>,
+    /// Set once the Quick Share backend runs.
+    pub quickshare: OnceLock<Arc<quickshare::Backend>>,
     state: Mutex<State>,
 }
 
@@ -91,7 +97,9 @@ impl Shared {
             conn,
             sim: opts.sim,
             probe_hardware: opts.probe_hardware,
+            network: opts.network,
             visibility_tx,
+            quickshare: OnceLock::new(),
             state: Mutex::new(State {
                 config,
                 report: DoctorReport::default(),

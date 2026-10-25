@@ -30,5 +30,6 @@ async fn main() -> anyhow::Result<()> {
     } else {
         fmt.init();
     }
-    ldropd::run(ldropd::Options { paths: Paths::from_env(), sim: args.dev_sim, probe_hardware: true }).await
+    ldropd::run(ldropd::Options { paths: Paths::from_env(), sim: args.dev_sim, probe_hardware: true, network: true })
+        .await
 }

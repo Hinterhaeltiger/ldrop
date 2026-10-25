@@ -1,0 +1,40 @@
+┌ ldrop · ldropd not running ──────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1] Devices  [2] Transfers  [3] Settings                                                                             │
+│                                                                                                                      │
+│ Not connected to ldropd.                                                                                             │
+│ ldropd is not running and could not be started (try `systemctl --user start ldropd`).                                │
+│ Retrying…                                                                                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────────────────────────────────────────────┘

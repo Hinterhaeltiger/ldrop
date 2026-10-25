@@ -24,6 +24,7 @@ pub use agent::{Agent, AgentRegistration, Decision, IncomingRequest, PendingRequ
 pub use ldrop_core;
 pub use proxies::{Error, Result};
 pub use transfers::{TransferEvent, TransferInfo, TransferWatch, transfer_id, transfer_path};
+pub use zbus;
 
 use proxies::{DiscoveryProxy, ManagerProxy};
 

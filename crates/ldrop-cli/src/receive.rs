@@ -56,8 +56,8 @@ async fn ask(mut pending: PendingRequest, stdin: &mut Lines<BufReader<Stdin>>) -
     eprintln!("{} wants to share {}", fmt::peer(&r.peer), fmt::items(&r.items, r.bytes_total));
     for item in r.items.iter().take(10) {
         match &item.text {
-            Some(text) => eprintln!("  {text}"),
-            None => eprintln!("  {}", item.name),
+            Some(text) if !text.is_empty() => eprintln!("  {text}"),
+            _ => eprintln!("  {}", item.name),
         }
     }
     if r.items.len() > 10 {

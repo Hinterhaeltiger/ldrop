@@ -78,6 +78,27 @@ string_enum!(
     }
 );
 
+impl Platform {
+    /// Name shown to users.
+    pub fn label(self) -> &'static str {
+        match self {
+            Platform::Android => "Android",
+            Platform::Apple => "Apple",
+            Platform::Linux => "Linux",
+        }
+    }
+}
+
+impl Protocol {
+    /// Name shown to users.
+    pub fn label(self) -> &'static str {
+        match self {
+            Protocol::QuickShare => "Quick Share",
+            Protocol::AirDrop => "AirDrop",
+        }
+    }
+}
+
 string_enum!(
     /// Link a peer was seen on or a transfer runs over.
     Medium ("medium") {
@@ -174,6 +195,8 @@ pub struct Peer {
 
 pub const MIME_TEXT: &str = "text/plain";
 pub const MIME_URL: &str = "text/uri-list";
+/// Received Wi-Fi credentials: `name` is the SSID, `text` the password. Never applied automatically.
+pub const MIME_WIFI: &str = "application/x-wifi-credentials";
 
 /// One file, text or URL in a transfer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,7 +207,8 @@ pub struct Item {
     /// Final location of a received file, or the source of a sent one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// Content of a text or URL item. Never written to the history file.
+    /// Content of a text, URL or Wi-Fi item; `Some("")` while an incoming one has not arrived
+    /// yet, which marks the item as text. Never written to the history file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
@@ -210,12 +234,13 @@ pub fn format_size(bytes: u64) -> String {
     if value < 10.0 { format!("{value:.1} {}", UNITS[unit]) } else { format!("{value:.0} {}", UNITS[unit]) }
 }
 
-/// "3 files", "1 file", "a link", "some text": the noun phrase prompts use.
+/// "3 files", "1 file", "a link", "some text", "a Wi-Fi network": the noun phrase prompts use.
 pub fn describe_items(items: &[Item]) -> String {
     match items {
         [] => "nothing".to_owned(),
         [one] if one.is_url() => "a link".to_owned(),
         [one] if one.mime == MIME_TEXT && one.text.is_some() => "some text".to_owned(),
+        [one] if one.mime == MIME_WIFI => "a Wi-Fi network".to_owned(),
         [_] => "1 file".to_owned(),
         many => format!("{} files", many.len()),
     }
@@ -261,5 +286,12 @@ mod tests {
         assert_eq!(describe_items(std::slice::from_ref(&file)), "1 file");
         assert_eq!(describe_items(&[file.clone(), file]), "2 files");
         assert_eq!(describe_items(&[url]), "a link");
+        let pending_text =
+            Item { name: "Hi".into(), mime: MIME_TEXT.into(), text: Some(String::new()), ..Default::default() };
+        assert_eq!(describe_items(&[pending_text]), "some text");
+        let txt_file = Item { name: "notes.txt".into(), mime: MIME_TEXT.into(), ..Default::default() };
+        assert_eq!(describe_items(&[txt_file]), "1 file");
+        let wifi = Item { name: "Home".into(), mime: MIME_WIFI.into(), ..Default::default() };
+        assert_eq!(describe_items(&[wifi]), "a Wi-Fi network");
     }
 }

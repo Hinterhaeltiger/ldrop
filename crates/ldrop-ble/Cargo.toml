@@ -1,6 +1,6 @@
 [package]
 name = "ldrop-ble"
-description = "ldrop Bluetooth support: BlueZ probe (advertising and scanning arrive in M2)"
+description = "ldrop Bluetooth support: BlueZ probe and advertising"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

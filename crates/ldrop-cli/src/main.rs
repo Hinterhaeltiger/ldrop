@@ -75,6 +75,12 @@ enum Command {
     Cancel { transfer: String },
     /// Clear the transfer history.
     ClearHistory,
+    /// Open the terminal interface (`ldrop-tui`).
+    Tui {
+        /// Passed on, e.g. `send FILE…`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Read or change settings (`~/.config/ldrop/config.toml`).
     Config {
         #[command(subcommand)]
@@ -190,6 +196,7 @@ async fn main() -> ExitCode {
         Command::Reject { transfer } => commands::decide(&transfer, commands::Verb::Reject).await,
         Command::Cancel { transfer } => commands::decide(&transfer, commands::Verb::Cancel).await,
         Command::ClearHistory => commands::clear_history().await,
+        Command::Tui { args } => commands::tui(&args),
         Command::Config { action } => match action {
             ConfigAction::Get { key } => commands::config_get(key.as_deref()),
             ConfigAction::Set { key, value } => commands::config_set(&key, &value),

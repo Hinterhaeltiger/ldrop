@@ -1,0 +1,40 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────────────────────────────────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings                                                                             │
+│                                                                                                                      │
+│ No transfers yet.                                                                                                    │
+│                                                                                                                      │
+│ Pick a device in [1] Devices to send, or press v so nearby devices can send to this computer.                        │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└ ↑↓ move · c cancel · o open · y copy · x clear · ? help · q quit ────────────────────────────────────────────────────┘

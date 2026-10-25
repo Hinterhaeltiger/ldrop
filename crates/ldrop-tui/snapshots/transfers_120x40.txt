@@ -1,0 +1,40 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────────────────────────────────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                                                                   │
+│                                                                                                                      │
+│ ▸ ↑ Pixel 9 Pro          2 files (27 MB)                          44%                                                │
+│   ↓ Pixel 9 Pro          https://example.org/recipe               done                                               │
+│   ↑ Galaxy S24           report.pdf (812 kB)                      declined                                           │
+│   ↓ Pixel 9 Pro          IMG_20261024_183012.jpg (3.1 MB)         done                                               │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│ To Pixel 9 Pro (Android · Quick Share) · 6 min ago                                                                   │
+│ ████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  44%  12 MB of 27 MB · 6.1 MB/s · 0:03 left │
+│ PIN 4821                                                                                                             │
+│ holiday.mp4  27 MB  → ~/Videos/holiday.mp4                                                                           │
+│ holiday.srt  40 kB  → ~/Videos/holiday.srt                                                                           │
+│                                                                                                                      │
+│                                                                                                                      │
+└ ↑↓ move · c cancel · o open · y copy · x clear · ? help · q quit ────────────────────────────────────────────────────┘

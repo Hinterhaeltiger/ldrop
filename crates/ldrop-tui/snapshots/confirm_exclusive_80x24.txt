@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                           │
+│                                                                              │
+│ ▸ Visibility        Everyone · 7:42 left                                     │
+│   Device name       thinkpad                                                 │
+│   Download folder   ~/Downloads                                              │
+│   Quick Share       on                                                       │
+│   AirDrop           on                                                       │
+│   Exclusive radio   off                                                      │
+│       ┌ Exclusive radio ─────────────────────────────────────────────┐       │
+│ Everyo│ Wi-Fi disconnects while Apple devices can see this computer. │ss v   │
+│ on any│                                                              │       │
+│       │ Allow AirDrop to take over the Wi-Fi card?                   │       │
+│       └ y allow · n cancel ──────────────────────────────────────────┘       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓ move · Enter change · v visibility · ? help · q quit ─────────────────────┘

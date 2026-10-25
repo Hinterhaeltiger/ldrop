@@ -192,7 +192,7 @@ ldrop/
     ldrop-core/              # domain model, transfer FSM, config, storage, visibility, agent
     ldrop-quickshare/        # Quick Share (ported from rquickshare core_lib [R42])
     ldrop-airdrop/           # thin adapter over owly-airdrop: consent, progress, storage policy, device mapping
-    ldrop-ble/               # bluer: Quick Share adverts/scan (AirDrop BLE comes from Owly)
+    ldrop-ble/               # BlueZ over zbus: Quick Share adverts/scan (AirDrop BLE comes from Owly)
     ldrop-bt/                # RFCOMM medium (BlueZ ProfileManager1)
     ldrop-wifi/              # nl80211, NetworkManager + wpa_supplicant D-Bus, capability probe
     ldrop-mdns/              # per-interface mDNS responder/browser (Quick Share on LAN)
@@ -214,7 +214,7 @@ ldrop/
 Owly crates come in as git dependencies pinned to a commit. If they need changes, fork them under `vendor/owly` (MIT allows this) and send the changes upstream.
 
 ### 4.2 Crates
-tokio, zbus, bluer, rustls + tokio-rustls, rcgen, hyper, prost/prost-build, RustCrypto (p256, hkdf, sha2, aes, cbc, hmac), neli or netlink-packet-generic, rtnetlink, mdns-sd (or a custom responder if per-interface binding isn't enough), qrcode (terminal QR), clap, serde + toml, tracing, nix. Frontends: cxx-qt, cxx-qt-lib, cxx-qt-build, ratatui, crossterm. Qt 6 QtQuick and KF6 come in as system libraries: Kirigami, KStatusNotifierItem, KNotifications, KI18n, KColorScheme. Plus Owly's own dependencies. `cargo deny` checks licenses and advisories.
+tokio, zbus (also for BlueZ, instead of bluer: no libdbus dependency), rustls + tokio-rustls, rcgen, hyper, prost/prost-build, RustCrypto (p256, hkdf, sha2, aes, cbc, hmac), neli or netlink-packet-generic, rtnetlink, mdns-sd (or a custom responder if per-interface binding isn't enough), qrcode (terminal QR), clap, serde + toml, tracing, nix. Frontends: cxx-qt, cxx-qt-lib, cxx-qt-build, ratatui, crossterm. Qt 6 QtQuick and KF6 come in as system libraries: Kirigami, KStatusNotifierItem, KNotifications, KI18n, KColorScheme. Plus Owly's own dependencies. `cargo deny` checks licenses and advisories.
 
 ---
 
@@ -360,7 +360,7 @@ Incoming: AwaitingAcceptance{pin?} → Transferring → Completed | Rejected | C
 - **Destination:** `download_dir`, falling back to the XDG download dir, then `~/Downloads`.
 - **Staging:** write into a per-transfer staging dir on the same filesystem, fsync, atomic rename on completion. Delete staging on failure or cancel.
 - **Never overwrite.** Use `name (1).ext`, and so on.
-- **Names:** basename only. Reject `/`, `\0`, control chars, `.` and `..`. Max 255 bytes. Quick Share is saved flat. AirDrop folders are recreated only inside a per-transfer top folder after validation.
+- **Names:** basename only. Sanitize rather than refuse: keep the part after the last `/` or `\`, drop control chars (incl. `\0`), map empty, `.` and `..` to `file`, cut to 248 bytes keeping the extension (room for ` (N)`). Quick Share is saved flat. AirDrop folders are recreated only inside a per-transfer top folder after validation.
 - **Before accept:** free space ≥ announced total + 64 MiB, otherwise `NOT_ENOUGH_SPACE` (Quick Share) or decline (AirDrop).
 - **During transfer:** bytes per file ≤ announced size. AirDrop decompressed output is capped at `airdrop.max_upload_bytes`.
 - **Concurrency:** many transfers in parallel; ≤ 1 pending prompt per peer and ≤ 3 globally; more are rejected as busy. Apple transfers also respect netd's radio arbitration (§13.2).
@@ -450,12 +450,12 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
   │   Searching…                                                       │
   └ ↑↓/jk move · Enter send · v visibility · ? help · q quit ──────────┘
   ```
-- **Devices tab:** live discovery list (name, kind, platform, protocol). Enter opens a send dialog with:
+- **Devices tab:** live discovery list (name, kind, platform, protocol). Discovery runs only while this tab is shown, like Android's share sheet. Enter opens a send dialog (`t` opens it in text mode; Ctrl-T switches Files/Text/Link) with:
   - path input with Tab completion and multiple paths;
   - text/URL mode;
   - after sending: the PIN (Quick Share), "Waiting for accept" (AirDrop) and progress.
 - **`ldrop-tui send FILE…`** starts with files preselected, so the user only picks a device. This is meant for WM keybinds and file-manager "open in terminal" setups.
-- **Incoming modal:** sender, platform, items and total size, PIN, a countdown from `Transfer.Deadline`. Keys: `a` accept, `d` decline. Shown over any tab, with a terminal bell.
+- **Incoming modal:** sender, platform, items and total size, PIN, a countdown from `Transfer.Deadline`. Keys: `a` accept, `d` decline. Shown over any tab, with a terminal bell. The answer keys are ignored for the first second, so typing into a field when a request pops up can't answer it. A waiting transfer can also be answered from the Transfers tab.
 - **Transfers tab:** progress bars, speed, ETA, history. Keys:
   - `c` cancel;
   - `o` open with `xdg-open`;
@@ -796,6 +796,7 @@ Each milestone ends with its acceptance checks passing.
 - **On GNOME** the Qt GUI won't be pixel-identical to libadwaita apps, and has client-side decorations; the tray needs the AppIndicator extension. This is the accepted trade-off of the one-GUI decision.
 - **Accent color** is missing on XFCE and Cinnamon [R56]; the scheme default is used there.
 - **File-manager integration formats are fragmented.** Thunar has per-user entries only.
+- **Host firewalls** (ufw, firewalld) commonly drop inbound LAN TCP, which silently breaks receiving while sending still works (seen on both M2 test machines). `doctor` should detect an active firewall and print the rule to add for the configured `tcp_port` (M12).
 
 ## 19. What this spec deliberately leaves to sources
 - **AirDrop and AWDL wire details:** normative in Owly `docs/SPEC.md` [R29], with notes in [R30] and conformance in [R32]. ldrop doesn't duplicate them.

@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Bluetooth side of ldrop. M1: read-only BlueZ probe for `ldrop doctor` (SPEC §3.1, §3.5).
-//! Quick Share BLE advertising and scanning arrive in M2.
+//! Bluetooth side of ldrop: a read-only BlueZ probe for `ldrop doctor` (SPEC §3.1, §3.5) and
+//! service-data advertisements, used for the Quick Share BLE wake (SPEC §5.2).
+//!
+//! Talks to BlueZ with zbus directly instead of bluer, so there is no libdbus dependency.
+
+mod advertise;
+
+pub use advertise::{Advertisement, advertise_service_data};
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -10,7 +16,7 @@ use tokio::sync::OnceCell;
 use zbus::fdo::ObjectManagerProxy;
 use zbus::{Connection, OwnedVariant};
 
-const BLUEZ: &str = "org.bluez";
+pub(crate) const BLUEZ: &str = "org.bluez";
 
 /// Probes BlueZ over the system bus. Never fails: problems end up in [`BluetoothReport::error`].
 pub async fn probe() -> BluetoothReport {

@@ -1,0 +1,40 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────────────────────────────────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                                                                   │
+│                                                                                                                      │
+│ ▸ Visibility        Everyone · 7:42 left                                                                             │
+│   Device name       thinkpad                                                                                         │
+│   Download folder   ~/Downloads                                                                                      │
+│   Quick Share       on                                                                                               │
+│   AirDrop           on                                                                                               │
+│   Exclusive radio   off                                                                                              │
+│                                                                                                                      │
+│ Everyone lets all nearby devices see this computer for 10 minutes. Press v on any tab to switch.                     │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                           ┌ Device name ─────────────────────────────────────────────────┐                           │
+│                           │ The name nearby devices show.                                │                           │
+│                           │                                                              │                           │
+│                           │ > thinkpad                                                   │                           │
+│                           └ Enter save · Esc cancel ─────────────────────────────────────┘                           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└ ↑↓ move · Enter change · v visibility · ? help · q quit ─────────────────────────────────────────────────────────────┘

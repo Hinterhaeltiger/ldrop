@@ -1,0 +1,29 @@
+[package]
+name = "ldrop-tui"
+description = "ldrop terminal interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ldrop-tui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+dirs.workspace = true
+futures-util.workspace = true
+ldrop-client.workspace = true
+ldrop-core.workspace = true
+ratatui.workspace = true
+tokio.workspace = true
+unicode-width.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

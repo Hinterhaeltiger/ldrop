@@ -1,0 +1,40 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────────────────────────────────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                                                                   │
+│                                                                                                                      │
+│ ▸ Pixel 9 Pro                      phone    Android  Quick Share                                                     │
+│   Galaxy Tab S9                    tablet   Android  Quick Share                                                     │
+│   Anna's iPhone                    phone    Apple    AirDrop                                                         │
+│                                                                                                                      │
+│ Searching…                                                                                                           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                           ┌ Incoming ────────────────────────────────────────────────────┐                           │
+│                           │ Pixel 9 Pro (Android · Quick Share)                          │                           │
+│                           │ wants to share 3 files (26 MB)                               │                           │
+│                           │                                                              │                           │
+│                           │   IMG_20261025_101530.jpg                             2.4 MB │                           │
+│                           │   VID_20261025_101602.mp4                              24 MB │                           │
+│                           │   notes.txt                                            12 kB │                           │
+│                           │                                                              │                           │
+│                           │ PIN 4821 — check it matches the sender's screen              │                           │
+│                           │ 0:42 left to answer                                          │                           │
+│                           └ a accept · d decline ────────────────────────────────────────┘                           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────────────────────────────────────────────┘

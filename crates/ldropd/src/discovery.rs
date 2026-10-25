@@ -11,8 +11,8 @@ use zbus::object_server::SignalEmitter;
 use zbus::{OwnedObjectPath, interface};
 
 use crate::error::{Error, Result};
-use crate::sim;
 use crate::state::{SessionReg, Shared};
+use crate::{quickshare, sim};
 
 pub fn path(id: u32) -> OwnedObjectPath {
     OwnedObjectPath::try_from(format!("{DISCOVERY_PATH_PREFIX}/{id}")).expect("valid object path")
@@ -71,6 +71,7 @@ pub async fn start(s: &Arc<Shared>, owner: String) -> zbus::Result<OwnedObjectPa
             sim::on_discovery_started(&s2).await;
         }
     });
+    tokio::spawn(quickshare::sync_discovery(s.clone()));
     Ok(path)
 }
 
@@ -78,6 +79,7 @@ pub async fn stop(s: &Arc<Shared>, id: u32) {
     if s.state().sessions.remove(&id).is_some() {
         let _ = s.conn.object_server().remove::<DiscoveryIface, _>(path(id)).await;
         tracing::debug!("discovery session {id} stopped");
+        tokio::spawn(quickshare::sync_discovery(s.clone()));
     }
 }
 
@@ -102,6 +104,26 @@ pub async fn device_found(s: &Arc<Shared>, device: Device) {
     };
     for id in sessions {
         emit_found(s, id, &device).await;
+    }
+}
+
+/// A backend no longer sees a device.
+pub async fn device_lost(s: &Arc<Shared>, id: &str) {
+    let sessions: Vec<u32> = {
+        let mut st = s.state();
+        let before = st.devices.len();
+        st.devices.retain(|d| d.id != id);
+        if st.devices.len() == before {
+            return;
+        }
+        st.sessions.keys().copied().collect()
+    };
+    for session in sessions {
+        if let Ok(em) = SignalEmitter::new(&s.conn, path(session))
+            && let Err(e) = DiscoveryIface::device_lost(&em, id).await
+        {
+            tracing::warn!("cannot emit DeviceLost: {e}");
+        }
     }
 }
 

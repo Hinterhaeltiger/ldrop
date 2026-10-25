@@ -20,7 +20,7 @@ use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, interface};
 
 use crate::error::{Error, Result};
 use crate::state::{AgentReg, Shared};
-use crate::{discovery, doctor, sim, transfer};
+use crate::{discovery, doctor, quickshare, sim, transfer};
 
 /// `Capabilities` is re-probed on read when older than this.
 const CAPABILITIES_MAX_AGE: Duration = Duration::from_secs(3);
@@ -230,6 +230,10 @@ impl Manager {
             .ok_or_else(|| Error::NotFound(format!("no device `{device_id}`; start discovery first")))?;
         if sim::is_sim_device(&device) {
             let id = sim::start_outgoing(&self.s, &device, items).await?;
+            return Ok(transfer::path(id));
+        }
+        if quickshare::is_quickshare_device(&device) {
+            let id = quickshare::start_outgoing(&self.s, &device, items).await?;
             return Ok(transfer::path(id));
         }
         Err(Error::Unavailable(format!("no {} backend is available yet", device.protocol)))

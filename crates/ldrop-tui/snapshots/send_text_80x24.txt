@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                           │
+│                                                                              │
+│ ▸ Pixel 9 Pro                      phone    Android  Quick Share             │
+│   Galaxy Tab S9                    tablet   Android  Quick Share             │
+│   Anna's iPhone                    phone    Apple    AirDrop                 │
+│                                                                              │
+│ Searching…                                                                   │
+│                                                                              │
+│       ┌ Send to Pixel 9 Pro ─────────────────────────────────────────┐       │
+│       │  Files   Text   Link  ^T switch                              │       │
+│       │                                                              │       │
+│       │ > Dinner at 8?                                               │       │
+│       │ Enter sends the text.                                        │       │
+│       └ Enter send · Esc cancel ─────────────────────────────────────┘       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────┘

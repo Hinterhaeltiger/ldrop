@@ -5,35 +5,20 @@ use std::io::IsTerminal;
 
 use ldrop_client::TransferInfo;
 use ldrop_core::time::{format_countdown, remaining};
-use ldrop_core::{Device, Direction, Peer, Platform, Protocol, TransferState, describe_items, format_size};
+use ldrop_core::{Device, Direction, Peer, TransferState, describe_items, format_size};
 use serde_json::{Value, json};
 
 pub fn stdout_is_tty() -> bool {
     std::io::stdout().is_terminal()
 }
 
-pub fn platform(p: Platform) -> &'static str {
-    match p {
-        Platform::Android => "Android",
-        Platform::Apple => "Apple",
-        Platform::Linux => "Linux",
-    }
-}
-
-pub fn protocol(p: Protocol) -> &'static str {
-    match p {
-        Protocol::QuickShare => "Quick Share",
-        Protocol::AirDrop => "AirDrop",
-    }
-}
-
 pub fn peer(p: &Peer) -> String {
     let name = if p.name.is_empty() { "Unknown device" } else { &p.name };
-    format!("{name} ({} · {})", platform(p.platform), protocol(p.protocol))
+    format!("{name} ({} · {})", p.platform.label(), p.protocol.label())
 }
 
 pub fn device_line(d: &Device) -> String {
-    format!("{:<24} {:<8} {:<8} {}", d.name, d.kind, platform(d.platform), protocol(d.protocol))
+    format!("{:<24} {:<8} {:<8} {}", d.name, d.kind, d.platform.label(), d.protocol.label())
 }
 
 pub fn device_json(d: &Device) -> Value {

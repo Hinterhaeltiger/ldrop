@@ -1,0 +1,17 @@
+[package]
+name = "ldrop-mdns"
+description = "ldrop mDNS: Quick Share service publishing and browsing on the LAN"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mdns-sd.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

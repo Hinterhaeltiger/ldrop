@@ -1,30 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! `ldropd`, the unprivileged user daemon (SPEC §4, §10). Owns `org.ldrop.Ldrop1` on the
-//! session bus. Protocol backends plug in from M2 on.
+//! session bus and runs the protocol backends.
 
 mod consent;
 mod discovery;
 mod doctor;
 mod error;
 mod manager;
+mod quickshare;
 mod sim;
 mod state;
 mod transfer;
 
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Context;
 use futures_util::StreamExt;
 use ldrop_core::config;
 use ldrop_core::dbus::{BUS_NAME, ROOT_PATH};
-use zbus::Connection;
 use zbus::fdo::{DBusProxy, ObjectManager};
+use zbus::{Connection, MatchRule, MessageStream};
 
 pub use state::{Options, Shared};
 
 /// How often the config file is checked for outside edits.
 const CONFIG_POLL: Duration = Duration::from_secs(2);
+/// How long running transfers get to tell their peers before the daemon exits.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
 
 /// Exports all objects on `conn` and starts the background tasks. Does not claim the bus
 /// name, so tests can run the daemon on any connection.
@@ -39,6 +42,11 @@ pub async fn start(conn: &Connection, opts: Options) -> anyhow::Result<Arc<Share
     }
     transfer::export_history(&s).await?;
     doctor::refresh(&s).await;
+    if s.network
+        && let Err(e) = quickshare::start(&s).await
+    {
+        tracing::error!("Quick Share is unavailable: {e:#}");
+    }
 
     tokio::spawn(watch_clients(s.clone()));
     tokio::spawn(watch_config(s.clone()));
@@ -46,10 +54,10 @@ pub async fn start(conn: &Connection, opts: Options) -> anyhow::Result<Arc<Share
     Ok(s)
 }
 
-/// Runs the daemon on the session bus until SIGINT/SIGTERM.
+/// Runs the daemon on the session bus until SIGINT/SIGTERM or the bus goes away.
 pub async fn run(opts: Options) -> anyhow::Result<()> {
     let conn = Connection::session().await.context("cannot connect to the session bus")?;
-    let _shared = start(&conn, opts).await?;
+    let shared = start(&conn, opts).await?;
     conn.request_name(BUS_NAME).await.with_context(|| format!("cannot own {BUS_NAME}; is ldropd already running?"))?;
     tracing::info!("ldropd ready on {BUS_NAME}");
 
@@ -57,9 +65,54 @@ pub async fn run(opts: Options) -> anyhow::Result<()> {
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
         _ = term.recv() => {}
+        () = bus_lost(&conn) => tracing::info!("lost the session bus"),
     }
     tracing::info!("shutting down");
+    cancel_transfers(&shared).await;
     Ok(())
+}
+
+/// Cancels running transfers so peers are told, and waits a little for them to wind down.
+async fn cancel_transfers(s: &Shared) {
+    let active = || -> Vec<_> {
+        s.state().transfers.values().filter(|r| !r.props.state.is_final()).map(|r| r.cancel.clone()).collect()
+    };
+    for token in active() {
+        token.cancel();
+    }
+    let deadline = Instant::now() + SHUTDOWN_GRACE;
+    while !active().is_empty() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Resolves when the connection closes (the session ends) or our name is taken away.
+async fn bus_lost(conn: &Connection) {
+    let rule = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .interface("org.freedesktop.DBus")
+        .member("NameLost")
+        .build();
+    let stream = match rule {
+        Ok(rule) => MessageStream::for_match_rule(rule, conn, None).await,
+        Err(e) => Err(e),
+    };
+    match stream {
+        Ok(mut stream) => {
+            while let Some(msg) = stream.next().await {
+                let lost_ours =
+                    msg.ok().and_then(|m| m.body().deserialize::<String>().ok()).is_some_and(|n| n == BUS_NAME);
+                if lost_ours {
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("cannot watch the bus connection: {e}");
+            std::future::pending::<()>().await;
+        }
+    }
 }
 
 /// Drops agents and discovery sessions of clients that leave the bus (SPEC §10).

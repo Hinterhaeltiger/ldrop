@@ -108,7 +108,7 @@ pub async fn start_outgoing(s: &Arc<Shared>, device: &Device, items: Vec<Item>) 
 }
 
 async fn run_incoming(s: Arc<Shared>, id: u32, cancel: CancellationToken) {
-    let decision = consent::ask(&s, id).await;
+    let decision = consent::ask(&s, id, std::future::pending()).await;
     tracing::info!("sim incoming {id}: {decision:?}");
     match decision {
         Decision::Accept => {

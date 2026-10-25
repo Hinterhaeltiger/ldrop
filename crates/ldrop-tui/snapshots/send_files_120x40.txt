@@ -1,0 +1,40 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────────────────────────────────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                                                                   │
+│                                                                                                                      │
+│ ▸ Pixel 9 Pro                      phone    Android  Quick Share                                                     │
+│   Galaxy Tab S9                    tablet   Android  Quick Share                                                     │
+│   Anna's iPhone                    phone    Apple    AirDrop                                                         │
+│                                                                                                                      │
+│ Searching…                                                                                                           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                           ┌ Send to Pixel 9 Pro ─────────────────────────────────────────┐                           │
+│                           │  Files   Text   Link  ^T switch                              │                           │
+│                           │                                                              │                           │
+│                           │ > ~/Pictures/IMG_2026                                        │                           │
+│                           │   IMG_20261025_101530.jpg  IMG_20261025_101602.jpg           │                           │
+│                           │                                                              │                           │
+│                           │ To send:                                                     │                           │
+│                           │   ~/Documents/report.pdf                                     │                           │
+│                           └ Tab complete · Enter add, again to send · Esc ───────────────┘                           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────────────────────────────────────────────┘

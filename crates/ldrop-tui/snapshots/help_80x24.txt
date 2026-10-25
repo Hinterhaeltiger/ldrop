@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                           │
+│                                                                              │
+│ ▸ Pixel 9 Pro                      phone    Android  Quick Share             │
+│   Galaxy Tab S9                    tablet   Android  Quick Share             │
+│   Anna's iPh┌ Keys ────────────────────────────────────────────┐             │
+│             │ 1 2 3, Tab    switch tabs                        │             │
+│ Searching…  │ ↑↓ or j k     move                               │             │
+│             │ Enter         send to device, change setting     │             │
+│             │ t             send text or a link                │             │
+│             │ v             visible to everyone / hidden       │             │
+│             │ a, d          accept, decline a request          │             │
+│             │ c             cancel the transfer                │             │
+│             │ o             open what was received             │             │
+│             │ y             copy text, link or paths           │             │
+│             │ x             clear the history                  │             │
+│             │ Esc           close a dialog                     │             │
+│             │ q, Ctrl-C     quit                               │             │
+│             └ any key closes ──────────────────────────────────┘             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────┘

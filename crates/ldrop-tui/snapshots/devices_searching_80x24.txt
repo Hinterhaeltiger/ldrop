@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                           │
+│                                                                              │
+│ Looking for nearby devices…                                                  │
+│                                                                              │
+│ Phone not listed? On Android, open Quick Share and set it to Everyone.       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓/jk move · Enter send · t text · v visibility · ? help · q quit ───────────┘

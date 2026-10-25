@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  2 active                           │
+│                                                                              │
+│ ▸ ↓ Pixel 7a             scan.pdf (420 kB)              waiting for you 0:51 │
+│   ↑ Pixel 9 Pro          2 files (27 MB)                44%                  │
+│   ↓ Pixel 9 Pro          https://example.org/recipe     done                 │
+│   ↑ Galaxy S24           report.pdf (812 kB)            declined             │
+│   ↓ Pixel 9 Pro          IMG_20261024_183012.jpg (3.1 … done                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ ──────────────────────────────────────────────────────────────────────────── │
+│ From Pixel 7a (Android · Quick Share) · 4 min ago                            │
+│ Waiting for your answer · 0:51 left · a accept · d decline                   │
+│ PIN 0193                                                                     │
+│ scan.pdf  420 kB                                                             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓ move · c cancel · o open · y copy · x clear · ? help · q quit ────────────┘

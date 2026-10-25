@@ -1,0 +1,24 @@
+┌ ldrop · thinkpad · Everyone 7:42 ─────────────────── QS:lan,bt  AirDrop:none ┐
+│ [1] Devices  [2] Transfers  [3] Settings  1 active                           │
+│                                                                              │
+│ ▸ Visibility        Everyone · 7:42 left                                     │
+│   Device name       thinkpad                                                 │
+│   Download folder   ~/Downloads                                              │
+│   Quick Share       on                                                       │
+│   AirDrop           on                                                       │
+│   Exclusive radio   off                                                      │
+│       ┌ Device name ─────────────────────────────────────────────────┐       │
+│ Everyo│ The name nearby devices show.                                │ss v   │
+│ on any│                                                              │       │
+│       │ > thinkpad                                                   │       │
+│       └ Enter save · Esc cancel ─────────────────────────────────────┘       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└ ↑↓ move · Enter change · v visibility · ? help · q quit ─────────────────────┘
