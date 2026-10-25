@@ -524,6 +524,8 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
 
 *Implementation note (M4, tray first).* The tray and the notifications are implemented in Rust directly over D-Bus instead of through KStatusNotifierItem/KNotification: `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` for the tray, `org.freedesktop.Notifications` for prompts and completion, and `org.kde.JobViewServerV2` for progress on Plasma (a progress notification elsewhere). The shell renders all of them natively, so the user sees the same thing, and the background part needs no Qt. Until the window exists, the menu offers Hidden / Visible to everyone, Open download folder and Quit; middle-click toggles visibility.
 
+*Plasma applet.* On Plasma, a native system-tray applet (`packaging/plasma/org.ldrop.visibility`, plain QML on `org.kde.plasma.workspace.dbus`, no compiled code) replaces the SNI icon: its popup is anchored to the tray like the Bluetooth and Network applets and offers Hidden / Everyone for 10 minutes with a live countdown, plus the download folder. `X-Plasma-DBusActivationService: org.ldrop.Ldrop1` makes the tray load it only while ldropd runs. `ldrop-gui` skips its own SNI icon in a Plasma session when the applet is installed (`--tray-icon` overrides) and keeps handling notifications.
+
 **Accessibility & i18n.**
 - Full keyboard navigation.
 - `Accessible.name` on every control (AT-SPI).
@@ -576,7 +578,7 @@ ldrop integrate <dolphin|nautilus|nemo|caja|thunar|pcmanfm-qt|all> [--remove]   
 | Thunar | custom action in per-user `~/.config/Thunar/uca.xml` [K11] (no system drop-in) | `ldrop integrate thunar` adds/removes it, with a backup |
 | KDE share menu | Purpose plugin [K10]: a small C++ plugin calling `org.ldrop.Gui1.Share` | `integrations/purpose/` (CMake) → KF6 Purpose plugin dir |
 | "Open with…" | `.desktop`, `Exec=ldrop-gui --share %U`, MimeType `application/octet-stream` + common types; never sets itself as default handler | `share/applications/org.ldrop.Ldrop.desktop` |
-| Tray | KStatusNotifierItem / SNI [K8] | in-app |
+| Tray | KStatusNotifierItem / SNI [K8]; on Plasma a system-tray applet | in-app; `share/plasma/plasmoids/org.ldrop.visibility/` |
 | Autostart (opt-in) | XDG autostart `ldrop-gui --tray` | written to `~/.config/autostart/` only when enabled |
 | Software centers | AppStream metainfo [K14] | `share/metainfo/org.ldrop.Ldrop.metainfo.xml` |
 

@@ -397,14 +397,22 @@ pub struct Tray {
 
 impl Tray {
     /// Serves the icon and menu and registers with the tray host, again whenever a host starts.
-    pub async fn start(conn: &Connection, view: View, actions: mpsc::UnboundedSender<Action>) -> zbus::Result<Tray> {
+    /// Without `show`, nothing appears and [`update`](Self::update) only records the view.
+    pub async fn start(
+        conn: &Connection,
+        view: View,
+        actions: mpsc::UnboundedSender<Action>,
+        show: bool,
+    ) -> zbus::Result<Tray> {
         let view = Arc::new(Mutex::new(view));
-        let server = conn.object_server();
-        server.at(ITEM_PATH, ItemIface { view: view.clone(), actions: actions.clone() }).await?;
-        server.at(MENU_PATH, MenuIface { view: view.clone(), revision: 1, actions }).await?;
-        let name = format!("org.kde.StatusNotifierItem-{}-1", std::process::id());
-        conn.request_name(name.as_str()).await?;
-        tokio::spawn(keep_registered(conn.clone(), name));
+        if show {
+            let server = conn.object_server();
+            server.at(ITEM_PATH, ItemIface { view: view.clone(), actions: actions.clone() }).await?;
+            server.at(MENU_PATH, MenuIface { view: view.clone(), revision: 1, actions }).await?;
+            let name = format!("org.kde.StatusNotifierItem-{}-1", std::process::id());
+            conn.request_name(name.as_str()).await?;
+            tokio::spawn(keep_registered(conn.clone(), name));
+        }
         Ok(Tray { conn: conn.clone(), view })
     }
 

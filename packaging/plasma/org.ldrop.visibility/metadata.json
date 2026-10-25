@@ -1,0 +1,24 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "ldrop contributors"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Choose who can send you files with Quick Share and AirDrop",
+        "EnabledByDefault": true,
+        "Icon": "document-share",
+        "Id": "org.ldrop.visibility",
+        "License": "GPL-3.0-or-later",
+        "Name": "ldrop",
+        "Version": "0.1",
+        "Website": "https://github.com/Hinterhaeltiger/ldrop"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-DBusActivationService": "org.ldrop.Ldrop1",
+    "X-Plasma-MainScript": "ui/main.qml",
+    "X-Plasma-NotificationArea": "true",
+    "X-Plasma-NotificationAreaCategory": "ApplicationStatus"
+}

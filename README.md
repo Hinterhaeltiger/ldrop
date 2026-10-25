@@ -3,82 +3,141 @@
 Quick Share and AirDrop for Linux: send to and receive from Android phones and Apple devices,
 peer to peer. The design is in [SPEC.md](SPEC.md).
 
-**Status: milestone M3 (terminal interface) plus the tray icon of M4.** Sending to and
-receiving from Quick Share devices on the same network works from the CLI, the TUI and the
-tray: discovery over mDNS with the BLE wake, PIN, files, text and links, decline, cancel from
-either side. Incoming requests show up as desktop notifications with Accept/Decline, and
-progress as a notification. Without a shared network, Quick Share also runs over Bluetooth
-and moves to Wi-Fi once the transfer starts (the same network, or a hotspot when allowed).
-AirDrop, hosting Wi-Fi Direct groups and the GUI window are later milestones. To try the frontends without phones, run the daemon with simulated peers
-(`--dev-sim`).
+## What works
 
-## Layout
+- **Quick Share** (Android) in both directions: files, text and links, with PIN, decline and
+  cancel from either side.
+  - Over the local network (mDNS discovery), or over Bluetooth when there is no shared network.
+  - Bluetooth transfers move to Wi-Fi once they start: the same network, or a hotspot when allowed.
+- **Frontends:**
+  - `ldrop` command;
+  - `ldrop-tui` terminal interface;
+  - `ldrop-gui` for the tray and desktop notifications (Accept/Decline, progress);
+  - a Plasma system-tray applet.
+- **Not yet:** AirDrop, Wi-Fi Direct hosting, and the GUI window.
 
-| Path | What |
-|---|---|
-| `crates/ldrop-core` | Shared types, config, history, capability rules, D-Bus wire types |
-| `crates/ldrop-wifi` | nl80211 Wi-Fi capability probe, NetworkManager hotspot sessions |
-| `crates/ldrop-ble` | BlueZ capability probe, BLE advertisements |
-| `crates/ldrop-bt` | Bluetooth Classic through BlueZ: RFCOMM service, discovery, adapter visibility |
-| `crates/ldrop-quickshare` | Quick Share protocol: UKEY2, SecureMessage, frames, send and receive sessions |
-| `crates/ldrop-mdns` | mDNS publish and browse |
-| `crates/ldropd` | User daemon, owns `org.ldrop.Ldrop1` on the session bus |
-| `crates/ldrop-client` | Client library for frontends: proxies, discovery, transfers, Agent |
-| `crates/ldrop-cli` | `ldrop` command |
-| `crates/ldrop-tui` | `ldrop-tui` terminal interface |
-| `crates/ldrop-gui` | `ldrop-gui` tray icon and notifications |
-| `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)) |
-| `packaging/` | systemd user unit, D-Bus activation file, desktop entry, API introspection XML |
+## Requirements
 
-## Build and try
+- **To build:** Rust 1.89+, `protoc`, and a C toolchain.
+  - Arch: `rust protobuf base-devel`.
+  - Debian/Ubuntu: `cargo protobuf-compiler build-essential`.
+- **To run:**
+  - a D-Bus session;
+  - BlueZ with a powered adapter, for Bluetooth;
+  - NetworkManager, for Wi-Fi switching (plus dnsmasq for hosting a hotspot);
+  - a notification server, for the tray prompts.
+  - Optional: Plasma 6 for the tray applet.
 
-Needs Rust 1.89+ and `protoc` (Arch: `protobuf`).
+## Build
 
 ```sh
-cargo build
-target/debug/ldropd --dev-sim &      # simulated "Sim Pixel" and "Sim iPhone"
-target/debug/ldrop-tui               # the terminal interface, or the commands below
-target/debug/ldrop doctor            # what this machine's hardware supports
-target/debug/ldrop devices
-target/debug/ldrop send --to "Sim Pixel" README.md
-target/debug/ldrop receive           # in another terminal, then:
-busctl --user call org.ldrop.Ldrop1 /org/ldrop/Ldrop1 org.ldrop.Ldrop1.Debug \
-    InjectIncoming ssast "Pixel 9" android 1 photo.jpg 2000000
+git clone https://github.com/Hinterhaeltiger/ldrop
+cd ldrop
+cargo build --release
 ```
 
-Logging: `LDROP_LOG=debug`.
+This produces `ldropd` (daemon), `ldrop` (CLI), `ldrop-tui` and `ldrop-gui` in
+`target/release/`.
 
-With a phone on the same network, run `target/debug/ldropd` without `--dev-sim`, then
-`ldrop visible` + `ldrop receive` to receive, or `ldrop send --to "<phone name>" FILE…` to send.
+## Install
 
-**Firewall.** Phones connect to this computer to send, so receiving needs inbound TCP on the
-Quick Share port and mDNS (5353/udp). Transfers that start over Bluetooth move to the LAN on
-the next port up. With a firewall, pin the port and open both, for example:
+### System-wide
 
 ```sh
-ldrop config set quickshare.tcp_port 47000                  # then restart ldropd
-sudo ufw allow 47000:47001/tcp && sudo ufw allow 5353/udp    # or: firewall-cmd --add-port=…
+sudo install -Dm755 target/release/{ldropd,ldrop,ldrop-tui,ldrop-gui} -t /usr/bin/
+sudo install -Dm644 packaging/systemd/user/ldropd.service -t /usr/lib/systemd/user/
+sudo install -Dm644 packaging/dbus/services/org.ldrop.Ldrop1.service -t /usr/share/dbus-1/services/
+sudo install -Dm644 packaging/desktop/org.ldrop.Ldrop.desktop -t /usr/share/applications/
 ```
 
-Sending only needs outbound connections.
+### For your user only (no root)
+
+The unit files point at `/usr/bin`, so rewrite the path while copying them:
+
+```sh
+install -Dm755 target/release/{ldropd,ldrop,ldrop-tui,ldrop-gui} -t ~/.local/bin/
+mkdir -p ~/.config/systemd/user ~/.local/share/dbus-1/services ~/.local/share/applications
+sed "s|/usr/bin|$HOME/.local/bin|" packaging/systemd/user/ldropd.service > ~/.config/systemd/user/ldropd.service
+sed "s|/usr/bin|$HOME/.local/bin|" packaging/dbus/services/org.ldrop.Ldrop1.service \
+    > ~/.local/share/dbus-1/services/org.ldrop.Ldrop1.service
+sed "s|^Exec=ldrop-gui|Exec=$HOME/.local/bin/ldrop-gui|" packaging/desktop/org.ldrop.Ldrop.desktop \
+    > ~/.local/share/applications/org.ldrop.Ldrop.desktop
+systemctl --user daemon-reload
+```
+
+`~/.local/bin` must be on your `PATH` for the `ldrop` commands.
+
+## Set up
+
+1. **Start the daemon.** Do it now and with every login:
+
+   ```sh
+   systemctl --user enable --now ldropd
+   ```
+
+   Any frontend also starts it through D-Bus on demand.
+2. **Open the firewall** if you run one (ufw, firewalld):
+   - Phones connect to this computer to send, so receiving needs inbound TCP on the Quick
+     Share port, plus mDNS (5353/udp).
+   - Transfers that start over Bluetooth move to the LAN on the next port up.
+   - Pin the port and open both:
+
+   ```sh
+   ldrop config set quickshare.tcp_port 47000                  # then: systemctl --user restart ldropd
+   sudo ufw allow 47000:47001/tcp && sudo ufw allow 5353/udp    # or: firewall-cmd --add-port=…
+   ```
+
+   Sending only needs outbound connections.
+3. **Tray and notifications.** Start `ldrop-gui`. To start it with every session, add it to
+   autostart:
+
+   ```sh
+   mkdir -p ~/.config/autostart
+   cp ~/.local/share/applications/org.ldrop.Ldrop.desktop ~/.config/autostart/   # or /usr/share/applications/…
+   ```
+4. **Plasma only: the tray applet.** Install it for your user:
+
+   ```sh
+   kpackagetool6 -t Plasma/Applet -i packaging/plasma/org.ldrop.visibility   # -u to update, -r org.ldrop.visibility to remove
+   systemctl --user restart plasma-plasmashell                                # or log in again
+   ```
+5. **Check the hardware.** `ldrop doctor` shows which transports this machine supports, and why
+   others are missing.
+
+## Use
+
+```sh
+ldrop visible                         # visible to everyone nearby for 10 minutes
+ldrop receive                         # accept incoming shares in this terminal (or use the tray)
+ldrop devices                         # who is nearby
+ldrop send --to "Pixel 9" photo.jpg   # send files; or --text "hi", --url https://…
+ldrop-tui                             # all of it in a terminal interface
+```
+
+Received files go to your XDG download folder (`ldrop config set download_dir …` to change
+it). Logging: `LDROP_LOG=debug`, or for the service, `journalctl --user -u ldropd`.
 
 **Bluetooth.** When the phone and the computer share no network, Quick Share runs over
 Bluetooth classic, with no pairing. It needs BlueZ and a powered adapter (ldrop never powers
 it on). It is slow, about 100–200 KB/s, so it suits photos and documents more than videos.
 
-- *Receiving:* while visible, ldrop renames the adapter to an encoded Quick Share name (the
-  string other Bluetooth devices see looks like `I1RGNEv8n14…`), makes it discoverable, and
-  sends a short BLE advertisement so Android phones start looking. Hiding puts the old name
-  and visibility back; after a crash, the next start does.
+- *Receiving:* while visible, ldrop:
+  - renames the adapter to an encoded Quick Share name (other Bluetooth devices see a string
+    like `I1RGNEv8n14…`);
+  - makes the adapter discoverable;
+  - sends a short BLE advertisement so Android phones start looking.
+
+  Hiding puts the old name and visibility back. After a crash, the next start does.
 - *Sending:* `ldrop devices` also lists phones that are visible over Bluetooth. ldrop uses the
   LAN when the device is there too, and Bluetooth otherwise.
 - *Faster after the start:* once a transfer over 1 MB is accepted, the connection moves from
-  Bluetooth to Wi-Fi if it can. If both are on the same network, that happens on its own. Moving
-  to a phone's hotspot, or hosting one for the phone, takes the computer off its current Wi-Fi
-  network for the duration of the transfer, so it is off by default:
-  `ldrop config set quickshare.allow_wifi_switch true`. ldrop puts the old network back
-  afterwards, and NetworkManager does so even if ldropd crashes. This needs NetworkManager,
-  and dnsmasq for hosting.
+  Bluetooth to Wi-Fi if it can.
+  - If both are on the same network, that happens on its own.
+  - Moving to a phone's hotspot, or hosting one for the phone, takes the computer off its
+    current Wi-Fi network for the duration of the transfer. So it is off by default; turn it
+    on with `ldrop config set quickshare.allow_wifi_switch true`.
+  - ldrop puts the old network back afterwards, and NetworkManager does so even if ldropd
+    crashes.
 
 To use only one of them: `ldrop config set quickshare.mediums lan` (or `bt`; the default is
 `lan,wfd,hotspot,bt`), then restart ldropd.
@@ -137,20 +196,52 @@ notifications:
   On Plasma it is a native job in the notification area instead.
 - **Done:** "Received 2 files from Pixel 9" with **Open** and **Show in folder**.
 
+**Plasma.** The tray applet (Set up, step 4) takes the place of the tray icon. Click it for a
+popup with *Hidden* / *Everyone for 10 minutes*, the time left, and the download folder;
+right-click has the same. It shows up while ldropd runs. With the applet installed,
+`ldrop-gui` shows no tray icon of its own on Plasma and only handles notifications;
+`ldrop-gui --tray-icon` brings the icon back.
+
+Only one `ldrop-gui` runs per session. The prompts need a notification server with actions:
+all desktops have one, and on window managers mako, dunst or swaync do. Without one,
+`ldrop-gui` leaves prompts to another frontend.
+
+## Development
+
+Try the frontends without phones: `--dev-sim` adds the simulated devices "Sim Pixel" and
+"Sim iPhone", and the Debug interface fakes incoming shares.
+
 ```sh
+cargo build
 target/debug/ldropd --dev-sim &
-target/debug/ldrop-gui &
+target/debug/ldrop-tui                 # or ldrop-gui, or the ldrop commands
+target/debug/ldrop send --to "Sim Pixel" README.md
 busctl --user call org.ldrop.Ldrop1 /org/ldrop/Ldrop1 org.ldrop.Ldrop1.Debug \
     InjectIncoming ssast "Pixel 9" android 2 photo.jpg notes.pdf 4000000
 ```
 
-Only one `ldrop-gui` runs per session. The tray needs a notification server with actions
-for the prompt (all desktops have one; on window managers mako, dunst or swaync); without
-one, `ldrop-gui` leaves prompts to another frontend. To start it with the session, copy
-`packaging/desktop/org.ldrop.Ldrop.desktop` to `~/.config/autostart/` (and to
-`~/.local/share/applications/` so notifications show the app name and icon).
+Stop the installed service first (`systemctl --user stop ldropd`): only one daemon owns the bus
+name. The design and milestones are in [SPEC.md](SPEC.md).
 
-## Tests
+### Layout
+
+| Path | What |
+|---|---|
+| `crates/ldrop-core` | Shared types, config, history, capability rules, D-Bus wire types |
+| `crates/ldrop-wifi` | nl80211 Wi-Fi capability probe, NetworkManager hotspot sessions |
+| `crates/ldrop-ble` | BlueZ capability probe, BLE advertisements |
+| `crates/ldrop-bt` | Bluetooth Classic through BlueZ: RFCOMM service, discovery, adapter visibility |
+| `crates/ldrop-quickshare` | Quick Share protocol: UKEY2, SecureMessage, frames, send and receive sessions |
+| `crates/ldrop-mdns` | mDNS publish and browse |
+| `crates/ldropd` | User daemon, owns `org.ldrop.Ldrop1` on the session bus |
+| `crates/ldrop-client` | Client library for frontends: proxies, discovery, transfers, Agent |
+| `crates/ldrop-cli` | `ldrop` command |
+| `crates/ldrop-tui` | `ldrop-tui` terminal interface |
+| `crates/ldrop-gui` | `ldrop-gui` tray icon and notifications |
+| `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)) |
+| `packaging/` | systemd user unit, D-Bus activation file, desktop entry, Plasma tray applet, API introspection XML |
+
+### Tests
 
 ```sh
 cargo test --workspace

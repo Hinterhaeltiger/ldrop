@@ -9,6 +9,7 @@ mod progress;
 mod tray;
 
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
@@ -27,11 +28,15 @@ struct Args {
     /// exists, so it is also the default.
     #[arg(long)]
     tray: bool,
+    /// Show the tray icon on Plasma even when the ldrop applet is installed, which otherwise
+    /// takes its place in the system tray.
+    #[arg(long)]
+    tray_icon: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _args = Args::parse();
+    let args = Args::parse();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_env("LDROP_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
         .with_target(false)
@@ -47,7 +52,36 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => return Err(e).context(format!("cannot claim {GUI_NAME}")),
     }
-    app::run(conn).await
+    let tray_icon = args.tray_icon || !plasma_applet_installed();
+    if !tray_icon {
+        tracing::info!("the ldrop Plasma applet shows visibility in the system tray; no tray icon");
+    }
+    app::run(conn, tray_icon).await
+}
+
+/// Plasma applet ID, `packaging/plasma/org.ldrop.visibility`.
+const PLASMA_APPLET: &str = "org.ldrop.visibility";
+
+/// Whether this is a Plasma session with the ldrop applet installed.
+fn plasma_applet_installed() -> bool {
+    let plasma = std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d == "KDE"));
+    plasma
+        && data_dirs()
+            .iter()
+            .any(|dir| dir.join("plasma/plasmoids").join(PLASMA_APPLET).join("metadata.json").is_file())
+}
+
+/// `$XDG_DATA_HOME` and `$XDG_DATA_DIRS`, with their defaults.
+fn data_dirs() -> Vec<PathBuf> {
+    let home = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
+    let system = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    home.into_iter().chain(system.split(':').map(PathBuf::from).filter(|p| p.is_absolute())).collect()
 }
 
 /// Opens a file, folder or URL with the desktop's default application.

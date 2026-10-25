@@ -71,9 +71,10 @@ enum End {
     Lost(String),
 }
 
-pub async fn run(conn: Connection) -> anyhow::Result<()> {
+/// `tray_icon`: whether to show the tray icon (the Plasma applet may stand in for it).
+pub async fn run(conn: Connection, tray_icon: bool) -> anyhow::Result<()> {
     let (actions_tx, mut actions) = mpsc::unbounded_channel();
-    let tray = Tray::start(&conn, view(&State::default()), actions_tx).await?;
+    let tray = Tray::start(&conn, view(&State::default()), actions_tx, tray_icon).await?;
     // D-Bus activation of a missing server would otherwise hold everything up for 25 s.
     let notifier = match tokio::time::timeout(NOTIFIER_TIMEOUT, Notifier::new(&conn)).await {
         Ok(Ok(notifier)) => Some(notifier),
