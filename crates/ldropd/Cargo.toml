@@ -12,14 +12,18 @@ clap.workspace = true
 futures-util.workspace = true
 mime_guess.workspace = true
 nix.workspace = true
+owly-airdrop.workspace = true
 ldrop-ble.workspace = true
 ldrop-bt.workspace = true
+ldrop-airdrop.workspace = true
 ldrop-core.workspace = true
 ldrop-mdns.workspace = true
 ldrop-quickshare.workspace = true
 ldrop-wifi.workspace = true
 rand.workspace = true
+rustls.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
@@ -28,7 +32,7 @@ zbus.workspace = true
 
 [dev-dependencies]
 ldrop-client.workspace = true
-tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

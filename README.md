@@ -10,6 +10,11 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - Over the local network (mDNS discovery), or over Bluetooth when there is no shared network.
     Phones are found from their BLE advertisements, so a computer without Wi-Fi finds them too.
   - Bluetooth transfers move to Wi-Fi once they start: the same network, or a hotspot when allowed.
+- **AirDrop** (iPhone, iPad, Mac), *experimental*, on the `airdrop-experimental` branch: both
+  directions, files and links (and folders, when receiving), with decline and cancel. Needs a
+  Wi-Fi card that [Owly](https://github.com/t4t5/omdrop-owl) supports, and Owly's radio service,
+  `owlyd`. Tested end to end against Owly's AirDrop implementation on a virtual link; not yet
+  against real Apple devices, so expect rough edges.
 - **Frontends:**
   - `ldrop` command;
   - `ldrop-tui` terminal interface;
@@ -17,7 +22,7 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - a share sheet window, opened from file managers ("Send with ldrop" right in the context
     menu, or "Open with ldrop" in any of them) and the KDE Share menu;
   - a Plasma system-tray applet and a GNOME Quick Settings toggle.
-- **Not yet:** AirDrop, Wi-Fi Direct hosting, and the main GUI window.
+- **Not yet:** Wi-Fi Direct hosting, AirDrop's Contacts Only mode, and the main GUI window.
 
 ## Requirements
 
@@ -32,6 +37,9 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
   - BlueZ with a powered adapter, for Bluetooth; sending to phones found over BLE also needs
     `Experimental = true` in `/etc/bluetooth/main.conf` (see [Bluetooth](#use));
   - NetworkManager, for Wi-Fi switching (plus dnsmasq for hosting a hotspot);
+  - for AirDrop, Owly's `owlyd` (Arch: `yay -S owly`; `.deb` and `.rpm` on
+    [its releases page](https://github.com/t4t5/owly/releases)) and a supported Wi-Fi card;
+    `ldrop doctor` says whether yours is;
   - a notification server, for the tray prompts;
   - Kirigami, for the share sheet (Arch `kirigami`, Debian/Ubuntu `qml6-module-org-kde-kirigami`).
   - Optional: Plasma 6 for the tray applet, GNOME 45 or later for the Quick Settings toggle,
@@ -106,6 +114,12 @@ over the ones `make install` puts in `/usr/local`.
    ```
 
    Sending only needs outbound connections.
+
+   AirDrop receives on 8771/tcp on the Apple link, `awdl0`:
+
+   ```sh
+   sudo ufw allow in on awdl0 from fe80::/10 to any port 8771 proto tcp
+   ```
 4. **Check the hardware.** `ldrop doctor` shows which transports this machine supports, and why
    others are missing.
 
@@ -154,6 +168,29 @@ it on). It is slow, about 100–200 KB/s, so it suits photos and documents more 
 
 To use only one of them: `ldrop config set quickshare.mediums lan` (or `bt`; the default is
 `lan,wfd,hotspot,bt`), then restart ldropd.
+
+**AirDrop (experimental).** This part has not been tried with a real iPhone, iPad or Mac yet;
+reports of what works and what doesn't are welcome. Apple devices use their own Wi-Fi link, AWDL. Owly's radio service, `owlyd`,
+brings it up on the computer's Wi-Fi card (as `awdl0`) and puts Wi-Fi back afterwards, even if
+ldropd crashes. ldrop asks for it only while it is needed, so Wi-Fi is left alone the rest of
+the time.
+
+- *Receiving:* make the computer visible as usual. On the iPhone, set AirDrop to *Everyone for
+  10 Minutes* (Settings → General → AirDrop), then share. ldrop notices the open share sheet
+  over Bluetooth, brings the Apple link up, and shows up there within a few seconds. Prompts,
+  progress and downloads work as for Quick Share; links arrive as text and are never opened on
+  their own. `ldrop config set airdrop.keep_link_up true` keeps the link up for the whole
+  visibility window instead.
+- *Sending:* `ldrop devices` (or the share sheet) lists Apple devices whose AirDrop is set to
+  *Everyone*; ldrop wakes them over Bluetooth while it looks. Text that is not a link arrives as
+  `Text.txt`.
+- *Wi-Fi:* most cards run AWDL next to the current network, which then has to be on channel 6,
+  44 or 149. Others (many Intel cards) leave the network while the link is up; ldrop allows
+  that only after `ldrop config set airdrop.allow_exclusive_radio true`, and the tray then says
+  "Wi-Fi paused for AirDrop".
+- *Over ssh:* owlyd only lets programs in the active local session use the radio. To test from
+  ssh, allow `io.github.t4t5.Owly.acquire` for your user with a polkit rule.
+- Turn AirDrop off with `ldrop config set airdrop.enabled false`.
 
 ## Terminal interface
 
@@ -271,18 +308,20 @@ name. The design and milestones are in [SPEC.md](SPEC.md).
 | Path | What |
 |---|---|
 | `crates/ldrop-core` | Shared types, config, history, capability rules, D-Bus wire types |
-| `crates/ldrop-wifi` | nl80211 Wi-Fi capability probe, NetworkManager hotspot sessions |
-| `crates/ldrop-ble` | BlueZ capability probe, BLE advertisements |
+| `crates/ldrop-wifi` | nl80211 Wi-Fi capability probe, NetworkManager hotspot sessions, owlyd client |
+| `crates/ldrop-ble` | BlueZ capability probe, BLE advertisements and advertisement monitors |
 | `crates/ldrop-bt` | Bluetooth Classic through BlueZ: RFCOMM service, discovery, adapter visibility |
 | `crates/ldrop-quickshare` | Quick Share protocol: UKEY2, SecureMessage, frames, send and receive sessions |
 | `crates/ldrop-mdns` | mDNS publish and browse |
+| `crates/ldrop-airdrop` | AirDrop helpers: UTI ↔ MIME, Apple model names, AWDL addresses, the BLE advert |
+| `third_party/owly-airdrop` | Owly's AirDrop protocol crate, with ldrop's patches ([third_party/README.md](third_party/README.md)) |
 | `crates/ldropd` | User daemon, owns `org.ldrop.Ldrop1` on the session bus |
 | `crates/ldrop-client` | Client library for frontends: proxies, discovery, transfers, Agent |
 | `crates/ldrop-cli` | `ldrop` command |
 | `crates/ldrop-tui` | `ldrop-tui` terminal interface |
 | `crates/ldrop-gui` | `ldrop-gui`: tray icon, notifications, share sheet (Rust + cxx-qt, QML in `qml/`) |
 | `integrations/` | File manager entries (Dolphin, Nemo, Caja, PCManFM-Qt), the Nautilus extension (native C, and a nautilus-python fallback), the KDE Share menu plugin, the GNOME Shell extension |
-| `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)) |
+| `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)), protocol research ([docs/research/](docs/research/)) |
 | `packaging/` | systemd user unit, D-Bus activation file, desktop and autostart entries, Plasma tray applet, API introspection XML |
 | `Makefile` | Build and install everything (`make`, `make install`, `make install-user`) |
 
@@ -293,7 +332,15 @@ cargo test --workspace
 ```
 
 The D-Bus tests in `crates/ldropd/tests/` start a private `dbus-daemon` and are skipped when it
-is not installed. The TUI compares every screen against text snapshots in
+is not installed. The AirDrop tests (`tests/airdrop.rs`) also run each case in a user and
+network namespace of its own, on a veth pair, against Owly's sender and receiver; they need
+`unshare`, `ip` and, for some, `tc`, and no root.
+
+To try AirDrop by hand without a supported card, run the daemon on any interface with an IPv6
+link-local address: `ldropd --airdrop-interface <if>` skips owlyd and the Bluetooth wake, and
+`--airdrop-peer <mac>` (repeatable) knocks at that peer as if owlyd had heard it.
+
+The TUI compares every screen against text snapshots in
 `crates/ldrop-tui/snapshots/`; after an intended change to the layout, rewrite them with
 `LDROP_UPDATE_SNAPSHOTS=1 cargo test -p ldrop-tui` and review the diff.
 

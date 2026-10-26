@@ -82,7 +82,14 @@ impl Harness {
         let address = address.trim().to_owned();
 
         let daemon = connect(&address).await;
-        let opts = ldropd::Options { paths: paths(root), sim: true, probe_hardware: false, network: false };
+        let opts = ldropd::Options {
+            paths: paths(root),
+            sim: true,
+            probe_hardware: false,
+            network: false,
+            airdrop_interface: None,
+            airdrop_peers: Vec::new(),
+        };
         ldropd::start(&daemon, opts).await.unwrap();
         daemon.request_name(BUS_NAME).await.unwrap();
         Some(Harness { bus, address, root: root.to_owned(), _tmp: None, _daemon: daemon })

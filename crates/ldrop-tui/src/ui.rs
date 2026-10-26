@@ -71,7 +71,7 @@ fn header(app: &App, theme: &Theme) -> Line<'static> {
         (Conn::Up, Some(status)) => {
             spans.push(Span::raw(sep.clone()));
             spans.push(Span::raw(fit(&status.device_name, 24, theme)));
-            spans.push(Span::raw(sep));
+            spans.push(Span::raw(sep.clone()));
             spans.push(match (status.visibility, app.visibility_left()) {
                 (Visibility::Everyone, Some(left)) => {
                     Span::styled(format!("Everyone {}", format_countdown(left)), theme.accent())
@@ -79,6 +79,10 @@ fn header(app: &App, theme: &Theme) -> Line<'static> {
                 (Visibility::Everyone, None) => Span::styled("Everyone", theme.accent()),
                 (Visibility::Hidden, _) => Span::raw("Hidden"),
             });
+            if app.airdrop_link.wifi_paused {
+                spans.push(Span::raw(sep));
+                spans.push(Span::styled("Wi-Fi paused for AirDrop", theme.warn()));
+            }
         }
         (Conn::Down(_), _) => {
             spans.push(Span::raw(sep));

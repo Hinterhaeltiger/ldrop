@@ -130,6 +130,13 @@ pub fn has_room(dir: &Path, bytes: u64) -> io::Result<bool> {
     Ok(free_space(dir)? >= bytes.saturating_add(SPACE_MARGIN))
 }
 
+/// [`has_room`] for a download dir, or the closest existing parent when it does not exist yet.
+/// Errors count as room: the write fails loudly later if there is none.
+pub fn fits(dir: &Path, bytes: u64) -> bool {
+    let existing = dir.ancestors().find(|d| d.is_dir()).unwrap_or(dir);
+    has_room(existing, bytes).unwrap_or(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

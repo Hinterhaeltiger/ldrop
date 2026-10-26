@@ -297,6 +297,9 @@ async fn follow(client: &Client, tx: &Events, client_tx: &watch::Sender<Option<C
     };
     client_tx.send_replace(Some(client.clone()));
     let _ = tx.send(Event::Connected { status, capabilities });
+    if let Ok(link) = client.airdrop_link().await {
+        let _ = tx.send(Event::AirDropLink(link));
+    }
     let _ = tx.send(Event::Transfers(watch.transfers().cloned().collect()));
 
     tokio::select! {
@@ -329,9 +332,11 @@ async fn follow_status(client: &Client, tx: Events) {
     ];
     let mut status = select_all(status.drain(..));
     let mut capabilities = manager.receive_capabilities_changed().await;
+    let mut link = manager.receive_air_drop_link_changed().await;
     loop {
         let event = tokio::select! {
             Some(()) = status.next() => client.status().await.map(Event::Status),
+            Some(_) = link.next() => client.airdrop_link().await.map(Event::AirDropLink),
             Some(_) = capabilities.next() => client.capabilities().await.map(Event::Capabilities),
             else => return,
         };

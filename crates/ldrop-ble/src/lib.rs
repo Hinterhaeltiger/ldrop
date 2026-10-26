@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Bluetooth side of ldrop: a read-only BlueZ probe for `ldrop doctor` (SPEC §3.1, §3.5) and
-//! service-data advertisements, used for the Quick Share BLE wake (SPEC §5.2).
+//! Bluetooth side of ldrop: a read-only BlueZ probe for `ldrop doctor` (SPEC §3.1, §3.5),
+//! advertisements, used for the Quick Share BLE wake (SPEC §5.2) and the AirDrop sender advert
+//! (SPEC §6.1), and advertisement monitors, which wake the AirDrop receiver (SPEC §6.5).
 //!
 //! Talks to BlueZ with zbus directly instead of bluer, so there is no libdbus dependency.
 
 mod advertise;
+mod monitor;
 
-pub use advertise::{Advertisement, advertise_service_data};
+pub use advertise::{Advertisement, advertise_manufacturer_data, advertise_service_data};
+pub use monitor::{Monitor, Pattern, Range, Seen, monitor};
 
 use std::collections::HashMap;
 use std::time::Duration;

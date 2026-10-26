@@ -45,6 +45,32 @@ pub struct Status {
     pub download_dir: String,
 }
 
+/// The Apple link AirDrop runs on (`AirDropLink`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AirDropLink {
+    /// `down`, `starting` or `up`.
+    pub state: String,
+    /// The link's interface while it is up.
+    pub interface: Option<String>,
+    /// The Wi-Fi card left its network for the link.
+    pub wifi_paused: bool,
+}
+
+impl AirDropLink {
+    pub fn from_dict(dict: &HashMap<String, zbus::OwnedVariant>) -> Self {
+        let text = |key: &str| dict.get(key).and_then(|v| String::try_from(v.try_clone().ok()?).ok());
+        AirDropLink {
+            state: text("state").unwrap_or_else(|| "down".into()),
+            interface: text("interface"),
+            wifi_paused: dict.get("wifi_paused").and_then(|v| bool::try_from(&**v).ok()).unwrap_or(false),
+        }
+    }
+
+    pub fn is_up(&self) -> bool {
+        self.state == "up"
+    }
+}
+
 /// What a discovery session reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiscoveryEvent {
@@ -87,6 +113,14 @@ impl Client {
             visibility_expires_at: u64::try_from(get("VisibilityExpiresAt").await?)?,
             download_dir: String::try_from(get("DownloadDir").await?)?,
         })
+    }
+
+    /// Read directly, not from the proxy cache.
+    pub async fn airdrop_link(&self) -> Result<AirDropLink> {
+        let props = PropertiesProxy::builder(&self.conn).destination(BUS_NAME).path(ROOT_PATH).build().await?;
+        let iface = InterfaceName::from_static_str_unchecked(MANAGER_IFACE);
+        let dict = HashMap::<String, zbus::OwnedVariant>::try_from(props.get(iface, "AirDropLink").await?)?;
+        Ok(AirDropLink::from_dict(&dict))
     }
 
     pub async fn capabilities(&self) -> Result<DoctorReport> {

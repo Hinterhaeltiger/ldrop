@@ -26,3 +26,5 @@ Thumbs.db
 
 # CMake builds of integrations/ (README)
 /build/
+# Built by editors that open the vendored crates on their own.
+/third_party/*/target/

@@ -2,12 +2,15 @@
 //! `ldropd`, the unprivileged user daemon (SPEC §4, §10). Owns `org.ldrop.Ldrop1` on the
 //! session bus and runs the protocol backends.
 
+mod airdrop;
 mod consent;
 mod discovery;
 mod doctor;
 mod error;
 mod manager;
+mod prompts;
 mod quickshare;
+mod radio;
 mod sim;
 mod state;
 mod transfer;
@@ -47,6 +50,11 @@ pub async fn start(conn: &Connection, opts: Options) -> anyhow::Result<Arc<Share
     {
         tracing::error!("Quick Share is unavailable: {e:#}");
     }
+    if s.network
+        && let Err(e) = airdrop::start(&s).await
+    {
+        tracing::error!("AirDrop is unavailable: {e:#}");
+    }
 
     tokio::spawn(watch_clients(s.clone()));
     tokio::spawn(watch_config(s.clone()));
@@ -70,6 +78,7 @@ pub async fn run(opts: Options) -> anyhow::Result<()> {
     tracing::info!("shutting down");
     cancel_transfers(&shared).await;
     quickshare::shutdown(&shared).await;
+    airdrop::shutdown(&shared).await;
     Ok(())
 }
 

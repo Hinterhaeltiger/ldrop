@@ -170,18 +170,17 @@ Reads system state without changing it:
    │ (UKEY2, frames, mediums)    wrapped by ldrop-airdrop (consent, progress, storage)
    ├───────────────┴───────────────────────────────────┤
    │ ldrop-ble   ldrop-bt   ldrop-mdns   (BlueZ D-Bus, plain sockets)
+   │ ldrop-wifi: NetworkManager (hotspot / join), owlyd client
    └─────────────────────┬─────────────────────────────┘
-              system D-Bus: org.ldrop.NetHelper1 (polkit)
+              system D-Bus: io.github.t4t5.Owly (polkit)
                          │
-            ldrop-netd (system service; radio owner + arbiter)
-     owly-radio + owly-awdl (dependencies) → awdl0
-     ldrop-wifi: nl80211, NetworkManager, wpa_supplicant P2P → wfd / hotspot
-     ldrop-nan (experimental)
+            owlyd (Owly's radio service, external dependency)
+     owly-radio + owly-awdl → awdl0
 ```
 
 Principles:
-- **One radio owner.** `ldrop-netd` decides which of AWDL, Wi-Fi Direct, hotspot or NAN holds the card at any moment. Requests are queued and the arbitration rules are explicit (§13). This is why Owly's crates are embedded rather than running a separate `owlyd` (fallback: §13.4).
-- **Privilege separation.** Only netd touches the radio. `ldropd` reaches Apple peers over IPv6 link-local sockets scoped to `awdl0`. Owly's AirDrop layer already runs unprivileged [R27].
+- **One radio owner per job.** owlyd owns the card while the Apple link is up and restores Wi-Fi afterwards, including after a crash. Inside ldropd, one radio lock keeps the Apple link and Quick Share's Wi-Fi switching apart (§6.5). A netd of ldrop's own stays a future option for Wi-Fi Direct (§13; ADR-002 in `docs/research/airdrop.md`).
+- **Privilege separation.** Only owlyd touches the radio. `ldropd` reaches Apple peers over IPv6 link-local sockets scoped to `awdl0`. Owly's AirDrop layer runs unprivileged [R27].
 - **Protocol crates are I/O-agnostic** state machines, so they can be unit-tested and fuzzed.
 
 ### 4.1 Workspace
@@ -305,12 +304,12 @@ Stack: BLE trigger → AWDL link → IPv6 link-local → mDNS/DNS-SD → TLS →
 - **Discovery quirks:** iPhone mDNS doesn't reach a Linux `awdl0`. Owly's sender therefore also tries `/Discover` at every AWDL peer while advertising over BLE, and sends ICMPv6 echoes every 3 s so Apple peers learn the neighbor [R30].
 
 ### 6.2 What ldrop uses from Owly
-| Owly crate | Used in | Purpose |
+| Owly part | Used in | Purpose |
 |---|---|---|
-| `owly-radio` | ldrop-netd | Card handling, shared/fixed placement, driver profiles (`drivers.toml`, override `/etc/owly/drivers.toml`), firewall probe [R27][R30] |
-| `owly-awdl` | ldrop-netd | AWDL; delivers packets to the kernel stack via `awdl0` [R27][R30] |
-| `owly-airdrop` | ldropd (via `ldrop-airdrop`) | AirDrop sender + receiver, BLE trigger, discovery quirks (§6.1) |
-| `owlyd`, `owly-cli` | reference | Wi-Fi restore and lifecycle logic to mirror in netd; `doctor`/`test-card` flows [R27][R33] |
+| `owlyd` (system service) | ldropd, through `ldrop-wifi::owly` | Leases the card for the Apple link over `io.github.t4t5.Owly.Radio1` (`Acquire`/`Release`, `Peers`, `Probe`); restores Wi-Fi; the lease ends when ldropd leaves the bus [R27] |
+| `owly-radio`, `owly-awdl` | owlyd | Card handling, driver profiles, AWDL on `awdl0` [R27][R30] |
+| `owly-airdrop` 0.1.0 | ldropd (`crates/ldropd/src/airdrop/`) | AirDrop sender + receiver, mDNS, BLE advert format. Vendored in `third_party/owly-airdrop` with small patches (receiver progress and cancel, sender spool directory and "asking" event) until upstream has them |
+| `owly-cli` | reference | `doctor`/`test-card` flows, the sender recipe [R27][R33] |
 
 ### 6.3 What `ldrop-airdrop` must add (upstream to Owly when generic)
 - **Consent hook.** `/Ask` must call ldrop's agent and return accept or `403` within the hold window. No auto-save.
@@ -328,6 +327,15 @@ Stack: BLE trigger → AWDL link → IPv6 link-local → mDNS/DNS-SD → TLS →
 - macOS receiver `/Ask` form (#15). This is relevant because Macs are AirDrop targets too.
 
 Track these in `docs/research/owly-open-questions.md` and re-check them at each Owly bump.
+
+### 6.5 Link on demand
+The Apple link costs Wi-Fi on exclusive-mode cards and power on all, so it is up only while something needs it. One `AppleLink` in ldropd counts its users and holds one owlyd lease (`Acquire(0)`) for all of them, released 10 s after the last user is done.
+- **Receiving** (visible to Everyone): a BlueZ advertisement monitor watches for the AirDrop BLE advert (Apple company ID, type `0x05`) above `airdrop.wake_rssi`, which means someone nearby has a share sheet open. Only then is the link acquired, the receiver bound on `[link]:8771` and announced over mDNS. It stays up while adverts keep coming or a prompt or transfer runs. `airdrop.keep_link_up = true` keeps it up for the whole visibility window.
+- **Sending** (a discovery session runs): the link is up, ldropd sends the AirDrop BLE advert (fresh random tag per session), browses mDNS on the link, and sends `/Discover` every 500 ms to each AWDL peer owlyd lists (Apple's port 8770 at the peer's EUI-64 link-local address). A receiver that answers with its name becomes a device `ad-<random>`; it is asked again every 5 s and lost after 30 s without an answer, when its mDNS record goes, or when owlyd stops listing it. Receivers that answer without listing us are asked only every 5 s. owlyd's AWDL sends the ICMPv6 echoes itself.
+- **Sends** hold the link and the advert until they end. Archives are built in `$XDG_STATE_HOME/ldrop/spool`, not in `/tmp`. Text that is not a link goes as `Text.txt`.
+- **Radio lock:** the link waits while a Quick Share transfer uses Wi-Fi on an exclusive card, and Quick Share does not switch networks while the link is up.
+- **Privacy:** fresh TLS identity, mDNS service ID, sender ID and BLE tag per session; nothing Apple-related is stored.
+- Frontends see the link in the Manager's `AirDropLink` property and show "Wi-Fi paused for AirDrop" while an exclusive card is off its network.
 
 ---
 
@@ -388,6 +396,7 @@ The root also implements `org.freedesktop.DBus.ObjectManager`, so clients see tr
 | prop | `Visibility` `s` | `hidden` \| `everyone` |
 | prop | `VisibilityExpiresAt` `t` | unix µs, 0 when hidden |
 | prop | `DownloadDir` `s` rw | |
+| prop | `AirDropLink` `a{sv}` | the Apple link: `state` (`down` \| `starting` \| `up`), `interface` `s` and `wifi_paused` `b` while up (`wifi_paused`: the card left its network for the link, so frontends can say "Wi-Fi paused for AirDrop") |
 | prop | `Capabilities` `a{sv}` | one `a{sv}` per backend id (`lan`, `bt`, `wfd`, `hotspot`, `awdl-shared`, `awdl-exclusive`, `awdl-activemon`, `nan`) with `status` (`supported`\|`degraded`\|`unsupported`) and `reason`; plus `report` `s`, the full doctor report as JSON (for `ldrop doctor` and the GUI hardware page). Re-probed when read and older than 3 s, and every 30 s |
 | method | `SetVisibility(s mode, u timeout_secs)` | 0 = default 600; `contacts`/`your-devices` → `NotSupported`. `Visibility` and `VisibilityExpiresAt` change in one `PropertiesChanged` |
 | method | `StartDiscovery() → o` | session object; ends on `Stop()` or when the caller leaves the bus |
@@ -634,6 +643,8 @@ Firewall needs, which docs and `doctor` must report (Owly probes this too [R30])
 
 ## 13. Privileged helper `ldrop-netd` & packaging
 
+> **Status:** deferred. AirDrop uses Owly's `owlyd` instead (§6.2, ADR-002), and hotspot/join go through NetworkManager from ldropd. netd remains the plan for Wi-Fi Direct, which needs root; the rest of this section describes it.
+
 ### 13.1 Service
 - System service `ldrop-netd.service`, D-Bus activated, bus name `org.ldrop.NetHelper1`.
 - Runs as a dedicated user (sysusers.d) with only `CAP_NET_ADMIN CAP_NET_RAW`.
@@ -753,12 +764,15 @@ Each milestone ends with its acceptance checks passing.
 
 **M6: Apple link in netd.** owly-radio + owly-awdl embedded (or owlyd per ADR-002); `AcquireAppleLink` for shared, exclusive and active-monitor modes.
 - *Accept:* on an MT7925 laptop `awdl0` comes up while Wi-Fi stays associated; on an Intel AX2xx laptop exclusive mode works and Wi-Fi comes back; an iPhone peer shows up as reachable.
+- *Status:* built on owlyd (ADR-002), with the link on demand of §6.5. Hardware acceptance pending.
 
 **M7: AirDrop receive** (iPhone/Mac → Linux) through `ldrop-airdrop` with the agent consent hook.
 - *Accept:* Linux shows in the iPhone's AirDrop sheet (Everyone mode); photos, a ≥ 1 GB video, multiple files and a URL arrive; decline returns 403; cancel works; the GUI prompt shows the AirDrop preview and a countdown.
+- *Status:* implemented; passes the veth tests against Owly's sender (`crates/ldropd/tests/airdrop.rs`). Hardware acceptance pending.
 
 **M8: AirDrop send** (Linux → iPhone/Mac).
 - *Accept:* the iPhone appears in `ldrop devices` within 10 s on shared-mode hardware; files and URLs arrive; a decline exits with 3.
+- *Status:* implemented; passes the veth tests against Owly's receiver, over mDNS and by knocking at AWDL peers. Hardware acceptance pending.
 
 **M9: Wi-Fi Aware** (only if ADR-001 calls for it, or as an Intel improvement).
 - *Accept:* the M5/M6 checks pass over NAN on supporting hardware and kernel; hwsim tests pass.

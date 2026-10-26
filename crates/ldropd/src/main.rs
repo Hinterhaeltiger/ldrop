@@ -14,6 +14,14 @@ struct Args {
     /// frontends without phones.
     #[arg(long)]
     dev_sim: bool,
+    /// Use this network interface as the Apple link instead of asking owlyd, with no BLE wake:
+    /// for developing AirDrop on a veth pair. Needs `airdrop.enabled`.
+    #[arg(long, value_name = "INTERFACE")]
+    airdrop_interface: Option<String>,
+    /// Look for AirDrop receivers at this MAC address's link-local address, as if owlyd had
+    /// heard it on AWDL. Repeatable; for development with `--airdrop-interface`.
+    #[arg(long = "airdrop-peer", value_name = "MAC")]
+    airdrop_peers: Vec<String>,
 }
 
 #[tokio::main]
@@ -30,6 +38,13 @@ async fn main() -> anyhow::Result<()> {
     } else {
         fmt.init();
     }
-    ldropd::run(ldropd::Options { paths: Paths::from_env(), sim: args.dev_sim, probe_hardware: true, network: true })
-        .await
+    ldropd::run(ldropd::Options {
+        paths: Paths::from_env(),
+        sim: args.dev_sim,
+        probe_hardware: true,
+        network: true,
+        airdrop_interface: args.airdrop_interface,
+        airdrop_peers: args.airdrop_peers,
+    })
+    .await
 }

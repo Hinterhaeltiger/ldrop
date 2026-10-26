@@ -6,7 +6,7 @@
 //! - **Hotspot / Wi-Fi Direct:** the phone hosts a network and we join it, or we host a
 //!   hotspot for the phone, through NetworkManager ([`ldrop_wifi::nm`]). The card leaves its
 //!   current network meanwhile, so this needs `quickshare.allow_wifi_switch` unless the card
-//!   is not connected anyway.
+//!   is not connected anyway, and the Apple link must not be up ([`crate::radio`]).
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -27,6 +27,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::radio::{Radio, Use};
 use crate::state::Shared;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -52,6 +53,8 @@ pub struct WifiUpgrader {
     lan: Vec<LanAddr>,
     /// The card, when hotspots and Wi-Fi Direct groups may be used.
     wifi: Option<WifiDevice>,
+    /// Claimed while on a hotspot or Wi-Fi Direct group.
+    radio: Arc<Radio>,
     join_hotspot: bool,
     join_wfd: bool,
     host_hotspot: bool,
@@ -76,7 +79,10 @@ pub async fn prepare(s: &Shared) -> Option<Arc<dyn Upgrader>> {
     };
     let [lan_on, hotspot_on, wfd_on] = uses;
     let lan = if lan_on { lan_addrs() } else { Vec::new() };
-    let wifi = if hotspot_on || wfd_on {
+    let wifi = if (hotspot_on || wfd_on) && s.radio.in_use(Use::AppleLink) {
+        tracing::debug!("Quick Share: not switching Wi-Fi networks while the Apple link is up");
+        None
+    } else if hotspot_on || wfd_on {
         match nm::wifi_device().await {
             Ok(Some(wifi)) if allow_switch || !wifi.connected => Some(wifi),
             Ok(Some(_)) => {
@@ -98,6 +104,7 @@ pub async fn prepare(s: &Shared) -> Option<Arc<dyn Upgrader>> {
         host_hotspot: hotspot_on && wifi.as_ref().is_some_and(|w| w.can_host),
         lan,
         wifi,
+        radio: s.radio.clone(),
         port,
         lan_host: Mutex::new(None),
     };
@@ -152,6 +159,7 @@ impl Upgrader for WifiUpgrader {
     fn host(&self, medium: Medium) -> BoxFuture<Result<Hosted, Error>> {
         let lan_host = *self.lan_host.lock().unwrap_or_else(|e| e.into_inner());
         let wifi = self.wifi.clone();
+        let radio = self.radio.clone();
         let port = self.port;
         Box::pin(async move {
             match medium {
@@ -163,6 +171,7 @@ impl Upgrader for WifiUpgrader {
                 }
                 Medium::WifiHotspot => {
                     let wifi = wifi.ok_or_else(|| failed("no Wi-Fi card to host on"))?;
+                    let claim = claim(&radio)?;
                     let (ssid, password) = hotspot_credentials();
                     tracing::info!("Quick Share: hosting the hotspot {ssid} on {}", wifi.interface);
                     let session = wifi.host(&ssid, &password).await.map_err(failed)?;
@@ -174,7 +183,7 @@ impl Upgrader for WifiUpgrader {
                         gateway: Some(IpAddr::V4(session.address)),
                         frequency: None,
                     });
-                    Ok(Hosted { path, incoming, lease: Box::new((accepting, session)) })
+                    Ok(Hosted { path, incoming, lease: Box::new((accepting, session, claim)) })
                 }
                 Medium::WifiDirect | Medium::Bluetooth => Err(failed("cannot host this medium")),
             }
@@ -183,6 +192,7 @@ impl Upgrader for WifiUpgrader {
 
     fn join(&self, path: UpgradePath) -> BoxFuture<Result<Joined, Error>> {
         let wifi = self.wifi.clone();
+        let radio = self.radio.clone();
         Box::pin(async move {
             match path {
                 UpgradePath::WifiLan { addr } => {
@@ -191,6 +201,7 @@ impl Upgrader for WifiUpgrader {
                 }
                 UpgradePath::WifiHotspot(net) | UpgradePath::WifiDirect(net) => {
                     let wifi = wifi.ok_or_else(|| failed("not allowed to switch Wi-Fi networks"))?;
+                    let claim = claim(&radio)?;
                     tracing::info!("Quick Share: joining {} on {}", net.ssid, wifi.interface);
                     let session = wifi.join(&net.ssid, &net.password).await.map_err(failed)?;
                     let host = net
@@ -198,7 +209,7 @@ impl Upgrader for WifiUpgrader {
                         .or(session.gateway.map(IpAddr::V4))
                         .ok_or_else(|| failed("the network has no gateway to connect to"))?;
                     let stream = connect(SocketAddr::new(host, net.port)).await?;
-                    Ok(Joined { stream, lease: Box::new(session) })
+                    Ok(Joined { stream, lease: Box::new((session, claim)) })
                 }
             }
         })
@@ -207,6 +218,11 @@ impl Upgrader for WifiUpgrader {
 
 fn failed(why: impl ToString) -> Error {
     Error::Io(io::Error::other(why.to_string()))
+}
+
+/// The card for a network switch, unless the Apple link came up since [`prepare`].
+fn claim(radio: &Arc<Radio>) -> Result<crate::radio::Claim, Error> {
+    radio.try_claim(Use::WifiSwitch).ok_or_else(|| failed("the Wi-Fi card is busy with AirDrop"))
 }
 
 /// A random hotspot name and WPA2 passphrase, the way Nearby makes them.
@@ -291,6 +307,7 @@ mod tests {
             join_hotspot: false,
             join_wfd: false,
             host_hotspot: false,
+            radio: Arc::default(),
             port: 0,
             lan_host: Mutex::new(None),
         }

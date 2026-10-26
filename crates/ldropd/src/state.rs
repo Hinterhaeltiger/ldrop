@@ -14,8 +14,9 @@ use ldrop_core::{Device, Visibility};
 use tokio::sync::watch;
 use zbus::{Connection, OwnedObjectPath};
 
-use crate::quickshare;
+use crate::radio::Radio;
 use crate::transfer::TransferRecord;
+use crate::{airdrop, quickshare};
 
 /// How the daemon is started.
 #[derive(Debug, Clone)]
@@ -28,6 +29,11 @@ pub struct Options {
     pub probe_hardware: bool,
     /// Run the protocol backends (listeners, mDNS, BLE). Off in tests.
     pub network: bool,
+    /// Use this interface as the Apple link instead of asking owlyd, and skip the BLE wake:
+    /// for tests on a veth pair.
+    pub airdrop_interface: Option<String>,
+    /// MAC addresses to look for AirDrop receivers at, as if owlyd had heard them on AWDL.
+    pub airdrop_peers: Vec<String>,
 }
 
 /// What backends react to: current visibility and when it expires (unix µs, 0 = never).
@@ -39,9 +45,14 @@ pub struct Shared {
     pub sim: bool,
     pub probe_hardware: bool,
     pub network: bool,
+    pub airdrop_interface: Option<String>,
+    pub airdrop_peers: Vec<String>,
     pub visibility_tx: watch::Sender<VisibilityState>,
     /// Set once the Quick Share backend runs.
     pub quickshare: OnceLock<Arc<quickshare::Backend>>,
+    /// Set once the AirDrop backend runs.
+    pub airdrop: OnceLock<Arc<airdrop::Backend>>,
+    pub radio: Arc<Radio>,
     state: Mutex<State>,
 }
 
@@ -98,8 +109,12 @@ impl Shared {
             sim: opts.sim,
             probe_hardware: opts.probe_hardware,
             network: opts.network,
+            airdrop_interface: opts.airdrop_interface,
+            airdrop_peers: opts.airdrop_peers,
             visibility_tx,
             quickshare: OnceLock::new(),
+            airdrop: OnceLock::new(),
+            radio: Arc::default(),
             state: Mutex::new(State {
                 config,
                 report: DoctorReport::default(),

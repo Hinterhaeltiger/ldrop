@@ -20,7 +20,7 @@ use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, interface};
 
 use crate::error::{Error, Result};
 use crate::state::{AgentReg, Shared};
-use crate::{discovery, doctor, quickshare, sim, transfer};
+use crate::{airdrop, discovery, doctor, quickshare, sim, transfer};
 
 /// `Capabilities` is re-probed on read when older than this.
 const CAPABILITIES_MAX_AGE: Duration = Duration::from_secs(3);
@@ -76,6 +76,12 @@ impl Manager {
             }
         }
         self.write_config("download_dir", &dir)
+    }
+
+    /// The Apple link: `state` (`down`, `starting`, `up`), `interface`, `wifi_paused`.
+    #[zbus(property, name = "AirDropLink")]
+    fn airdrop_link(&self) -> HashMap<&'static str, Variant<'static>> {
+        airdrop::link_status(&self.s)
     }
 
     #[zbus(property)]
@@ -236,6 +242,10 @@ impl Manager {
             let id = quickshare::start_outgoing(&self.s, &device, items).await?;
             return Ok(transfer::path(id));
         }
+        if airdrop::is_airdrop_device(&device) {
+            let id = airdrop::start_outgoing(&self.s, &device, items).await?;
+            return Ok(transfer::path(id));
+        }
         Err(Error::Unavailable(format!("no {} backend is available yet", device.protocol)))
     }
 }
@@ -316,6 +326,12 @@ pub async fn emit_config_props(s: &Shared, name: bool, dir: bool) {
     if dir {
         let _ = iface.download_dir_changed(em).await;
     }
+}
+
+pub async fn emit_airdrop_link(s: &Shared) {
+    let Ok(iface_ref) = s.conn.object_server().interface::<_, Manager>(ROOT_PATH).await else { return };
+    let iface = iface_ref.get().await;
+    let _ = iface.air_drop_link_changed(iface_ref.signal_emitter()).await;
 }
 
 pub async fn emit_capabilities(s: &Shared) {

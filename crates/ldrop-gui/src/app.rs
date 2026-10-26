@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use futures_util::stream::{BoxStream, select_all};
 use futures_util::{FutureExt, StreamExt};
-use ldrop_client::{Client, Decision, PendingRequest, Status, TransferEvent, TransferInfo};
+use ldrop_client::{AirDropLink, Client, Decision, PendingRequest, Status, TransferEvent, TransferInfo};
 use ldrop_core::time::remaining;
 use ldrop_core::{Direction, TransferState, Visibility, prompt_text};
 use tokio::sync::mpsc;
@@ -27,10 +27,19 @@ struct State {
     /// `None` while ldropd is unreachable.
     status: Option<Status>,
     transfers: BTreeMap<u32, TransferInfo>,
+    link: AirDropLink,
 }
 
 /// What the tray shows for `state`.
 fn view(state: &State) -> View {
+    let mut view = base_view(state);
+    if state.status.is_some() && state.link.wifi_paused {
+        view.status.push_str(" · Wi-Fi paused for AirDrop");
+    }
+    view
+}
+
+fn base_view(state: &State) -> View {
     let Some(status) = &state.status else {
         return View {
             icon: "view-hidden",
@@ -140,7 +149,11 @@ async fn session(
         None => (None, None),
     };
 
-    let mut state = State { transfers: watch.transfers().map(|t| (t.id, t.clone())).collect(), status: Some(status) };
+    let mut state = State {
+        transfers: watch.transfers().map(|t| (t.id, t.clone())).collect(),
+        status: Some(status),
+        link: client.airdrop_link().await.unwrap_or_default(),
+    };
     let mut progress = notifier.map(|n| Progress::new(n.clone(), client.clone(), state.transfers.keys().copied()));
     if let (Some(progress), Some(status)) = (progress.as_mut(), &state.status) {
         progress.set_download_dir(&status.download_dir);
@@ -154,6 +167,7 @@ async fn session(
         manager.receive_visibility_changed().await.map(|_| ()).boxed(),
         manager.receive_visibility_expires_at_changed().await.map(|_| ()).boxed(),
         manager.receive_download_dir_changed().await.map(|_| ()).boxed(),
+        manager.receive_air_drop_link_changed().await.map(|_| ()).boxed(),
     ];
     let mut changes = select_all(changes.drain(..));
     let exited = client.daemon_exited().fuse();
@@ -182,10 +196,11 @@ async fn session(
                     }
                     state.status = Some(status);
                 }
+                state.link = client.airdrop_link().await.unwrap_or_default();
             }
             Some(pending) = recv(&mut requests) => {
                 if let Some(notifier) = notifier {
-                    tokio::spawn(prompt(notifier.clone(), pending));
+                    tokio::spawn(prompt(notifier.clone(), client.clone(), pending));
                 }
             }
             Some(action) = actions.recv() => {
@@ -235,7 +250,8 @@ async fn act(client: &Client, state: &State, action: Action) -> Option<End> {
 
 /// Asks about one incoming request with an Accept/Decline notification. Dismissing it declines;
 /// if the server drops it otherwise, the request waits for its deadline (or `ldrop accept`).
-async fn prompt(notifier: Notifier, mut pending: PendingRequest) {
+async fn prompt(notifier: Notifier, client: Client, mut pending: PendingRequest) {
+    let preview = save_preview(&client, &pending).await;
     let note = {
         let r = &pending.request;
         let (summary, body) = prompt_text(&r.peer.name, &r.items, r.bytes_total, &r.pin);
@@ -243,6 +259,7 @@ async fn prompt(notifier: Notifier, mut pending: PendingRequest) {
             actions: vec![("accept", "Accept"), ("reject", "Decline")],
             urgency: Urgency::Critical,
             timeout_ms: i32::try_from(r.time_left().as_millis()).unwrap_or(i32::MAX),
+            image: preview.as_ref().map(|p| p.0.clone()),
             ..Notification::new(summary, body)
         }
     };
@@ -270,6 +287,39 @@ async fn prompt(notifier: Notifier, mut pending: PendingRequest) {
     match decision {
         Some(decision) => pending.respond(decision),
         None => pending.expired().await,
+    }
+}
+
+/// A preview file, removed when dropped.
+struct Preview(std::path::PathBuf);
+
+impl Drop for Preview {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Saves the picture the sender attached, such as AirDrop's JPEG 2000 thumbnail, where the
+/// notification server can read it.
+async fn save_preview(client: &Client, pending: &PendingRequest) -> Option<Preview> {
+    let info = client.transfer(&pending.request.transfer.as_ref()).await.ok()?;
+    let ext = preview_extension(&info.preview_mime)?;
+    if info.preview.is_empty() {
+        return None;
+    }
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let path = dir.join(format!("ldrop-preview-{}-{}.{ext}", std::process::id(), pending.request.id));
+    std::fs::write(&path, &info.preview).inspect_err(|e| tracing::debug!("cannot save a preview: {e}")).ok()?;
+    Some(Preview(path))
+}
+
+fn preview_extension(mime: &str) -> Option<&'static str> {
+    match mime {
+        "image/jp2" => Some("jp2"),
+        "image/jpeg" => Some("jpg"),
+        "image/png" => Some("png"),
+        "image/webp" => Some("webp"),
+        _ => None,
     }
 }
 
@@ -342,5 +392,14 @@ mod tests {
         let v = view(&state);
         assert!(!v.attention);
         assert_eq!((v.icon, v.status.as_str()), ("folder-download", "Receiving from Pixel 9 · 25%"));
+    }
+
+    #[test]
+    fn wifi_paused_for_airdrop() {
+        let mut state = State { status: Some(status(Visibility::Everyone, 0)), ..Default::default() };
+        state.link = AirDropLink { state: "up".into(), interface: Some("awdl0".into()), wifi_paused: true };
+        assert_eq!(view(&state).status, "Visible as thinkpad · Wi-Fi paused for AirDrop");
+        state.link.wifi_paused = false;
+        assert_eq!(view(&state).status, "Visible as thinkpad");
     }
 }

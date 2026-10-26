@@ -9,6 +9,8 @@ rust-version.workspace = true
 [dependencies]
 futures-util.workspace = true
 ldrop-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

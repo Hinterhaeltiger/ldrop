@@ -45,6 +45,8 @@ pub struct DoctorReport {
     pub network: NetworkReport,
     pub wifi: WifiReport,
     pub bluetooth: BluetoothReport,
+    #[serde(default)]
+    pub owly: OwlyReport,
     pub notes: Vec<String>,
 }
 
@@ -187,6 +189,116 @@ impl BluetoothReport {
     fn can_advertise(&self) -> bool {
         self.primary().is_some_and(|a| a.powered && a.adv_instances_supported.unwrap_or(0) > 0)
     }
+}
+
+/// What Owly's radio service `owlyd` reports (SPEC §6, ADR-002). When it answers, its verdict
+/// replaces the built-in matrix for the AWDL backends; without it there is no Apple link.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OwlyReport {
+    /// owlyd answered.
+    pub present: bool,
+    /// Why it could not be asked, when it is installed but failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub station: Option<String>,
+    pub driver: Option<String>,
+    pub device: Option<String>,
+    /// `tested`, `untested` or `broken`.
+    pub status: Option<String>,
+    /// `shared`, `exclusive` or `active-monitor`.
+    pub mode: Option<String>,
+    /// Where the link would run.
+    pub channel: Option<u32>,
+    /// It found a card it can drive.
+    pub hardware: bool,
+    /// What stands in the way, most fundamental first: (`hardware` | `backend` | `radio`,
+    /// one sentence). `radio` ones are the card's state, which a person can change.
+    pub missing: Vec<(String, String)>,
+    /// What works, but less well than it might.
+    pub issues: Vec<String>,
+}
+
+const AWDL_BACKENDS: [BackendId; 3] = [BackendId::AwdlShared, BackendId::AwdlExclusive, BackendId::AwdlActivemon];
+
+/// Replaces the AWDL verdicts of [`evaluate`] with owlyd's. Without owlyd they are all
+/// unsupported, keeping what the built-in matrix said in the reason.
+pub fn apply_owly(backends: &mut [BackendStatus], owly: &OwlyReport, policy: Policy, bt: &BluetoothReport) {
+    for b in backends.iter_mut().filter(|b| AWDL_BACKENDS.contains(&b.id)) {
+        if owly.present {
+            *b = owly_verdict(b.id, owly, policy, bt);
+        } else if b.support != Support::Unsupported {
+            let why =
+                owly.error.clone().unwrap_or_else(|| "needs Owly's radio service (owlyd, package `owly`)".to_owned());
+            *b = BackendStatus {
+                id: b.id,
+                support: Support::Unsupported,
+                reason: format!("{why}; Owly's matrix says: {}", b.reason),
+            };
+        }
+    }
+}
+
+fn owly_verdict(id: BackendId, owly: &OwlyReport, policy: Policy, bt: &BluetoothReport) -> BackendStatus {
+    let status = |support, reason: String| BackendStatus { id, support, reason };
+    let missing = |ids: &[&str]| -> Vec<&str> {
+        owly.missing.iter().filter(|(i, _)| ids.contains(&i.as_str())).map(|(_, say)| say.as_str()).collect()
+    };
+    if !owly.hardware {
+        let why = missing(&["hardware", "backend", "radio"]).first().copied().unwrap_or("no Wi-Fi card it can drive");
+        return status(Support::Unsupported, format!("owlyd: {why}"));
+    }
+    let mode = owly.mode.as_deref().unwrap_or("");
+    let ours = match id {
+        BackendId::AwdlShared => "shared",
+        BackendId::AwdlExclusive => "exclusive",
+        _ => "active-monitor",
+    };
+    if mode != ours {
+        let how = if mode.is_empty() { "no mode".to_owned() } else { format!("{mode} mode") };
+        return status(Support::Unsupported, format!("owlyd runs this card in {how}"));
+    }
+    let card = match (&owly.station, &owly.driver) {
+        (Some(s), Some(d)) => format!("{s} ({d})"),
+        (Some(s), None) => s.clone(),
+        (None, Some(d)) => d.clone(),
+        (None, None) => "the Wi-Fi card".to_owned(),
+    };
+    let blocking = missing(&["hardware", "backend"]);
+    if !blocking.is_empty() {
+        return status(Support::Unsupported, format!("owlyd: {}", blocking.join(" ")));
+    }
+    let mut support = Support::Supported;
+    let mut reason = match owly.channel {
+        Some(ch) => format!("owlyd: {card}, {mode} mode on channel {ch}"),
+        None => format!("owlyd: {card}, {mode} mode"),
+    };
+    if owly.status.as_deref() == Some("untested") {
+        reason.push_str(" (untested card)");
+    }
+    let fixable = missing(&["radio"]);
+    if !fixable.is_empty() {
+        support = Support::Degraded;
+        reason = format!("{reason}; {}", fixable.join(" "));
+    }
+    if id == BackendId::AwdlExclusive {
+        support = Support::Degraded;
+        reason.push_str("; Wi-Fi disconnects while the Apple link is up");
+        if !policy.allow_exclusive_radio {
+            reason.push_str("; enable with `ldrop config set airdrop.allow_exclusive_radio true`");
+        }
+    }
+    if !owly.issues.is_empty() {
+        support = Support::Degraded;
+        reason = format!("{reason}; {}", owly.issues.join(" "));
+    }
+    if !bt.can_advertise() {
+        if support == Support::Supported {
+            support = Support::Degraded;
+        }
+        reason.push_str("; no BLE advertising, so Apple devices can't be woken for discovery");
+    }
+    status(support, reason)
 }
 
 /// AirDrop link support of a Wi-Fi card according to Owly's hardware matrix (SPEC §3.3).
@@ -560,6 +672,73 @@ mod tests {
         let wifi = WifiReport { present: true, phys: vec![phy], error: None };
         let r = evaluate(&lan(), &wifi, &bt_ok(), Policy::default());
         assert_eq!(get(&r, BackendId::Hotspot).support, Support::Degraded);
+    }
+
+    fn owly_shared() -> OwlyReport {
+        OwlyReport {
+            present: true,
+            station: Some("wlp1s0".into()),
+            driver: Some("rtw89_8852ae".into()),
+            status: Some("tested".into()),
+            mode: Some("shared".into()),
+            channel: Some(6),
+            hardware: true,
+            ..OwlyReport::default()
+        }
+    }
+
+    #[test]
+    fn owly_replaces_the_matrix() {
+        let wifi = WifiReport { present: true, phys: vec![intel_ax211()], error: None };
+        let mut r = evaluate(&lan(), &wifi, &bt_ok(), Policy::default());
+        apply_owly(&mut r, &owly_shared(), Policy::default(), &bt_ok());
+        let shared = get(&r, BackendId::AwdlShared);
+        assert_eq!(shared.support, Support::Supported, "{}", shared.reason);
+        assert_eq!(shared.reason, "owlyd: wlp1s0 (rtw89_8852ae), shared mode on channel 6");
+        assert_eq!(get(&r, BackendId::AwdlExclusive).support, Support::Unsupported);
+        assert_eq!(get(&r, BackendId::Lan).support, Support::Supported, "others untouched");
+
+        let mut owly = owly_shared();
+        owly.status = Some("untested".into());
+        owly.missing = vec![("radio".into(), "Set allow_untested = true in /etc/owly/radio.toml.".into())];
+        apply_owly(&mut r, &owly, Policy::default(), &bt_ok());
+        let shared = get(&r, BackendId::AwdlShared);
+        assert_eq!(shared.support, Support::Degraded);
+        assert!(shared.reason.contains("(untested card); Set allow_untested"), "{}", shared.reason);
+
+        owly.missing.insert(0, ("backend".into(), "hostapd is missing.".into()));
+        apply_owly(&mut r, &owly, Policy::default(), &bt_ok());
+        assert_eq!(get(&r, BackendId::AwdlShared).support, Support::Unsupported);
+
+        let none = OwlyReport {
+            present: true,
+            missing: vec![("hardware".into(), "No card.".into())],
+            ..OwlyReport::default()
+        };
+        apply_owly(&mut r, &none, Policy::default(), &bt_ok());
+        assert_eq!(get(&r, BackendId::AwdlShared).reason, "owlyd: No card.");
+    }
+
+    #[test]
+    fn owly_exclusive_and_absent() {
+        let wifi = WifiReport { present: true, phys: vec![intel_ax211()], error: None };
+        let base = evaluate(&lan(), &wifi, &bt_ok(), Policy::default());
+        assert_eq!(get(&base, BackendId::AwdlExclusive).support, Support::Degraded);
+
+        let mut r = base.clone();
+        let owly = OwlyReport { mode: Some("exclusive".into()), channel: None, ..owly_shared() };
+        apply_owly(&mut r, &owly, Policy::default(), &bt_ok());
+        let exclusive = get(&r, BackendId::AwdlExclusive);
+        assert_eq!(exclusive.support, Support::Degraded);
+        assert!(exclusive.reason.contains("allow_exclusive_radio"), "{}", exclusive.reason);
+        assert_eq!(get(&r, BackendId::AwdlShared).reason, "owlyd runs this card in exclusive mode");
+
+        let mut r = base;
+        apply_owly(&mut r, &OwlyReport::default(), Policy::default(), &bt_ok());
+        let exclusive = get(&r, BackendId::AwdlExclusive);
+        assert_eq!(exclusive.support, Support::Unsupported);
+        assert!(exclusive.reason.starts_with("needs Owly's radio service"), "{}", exclusive.reason);
+        assert!(exclusive.reason.contains("exclusive mode"), "keeps the matrix verdict: {}", exclusive.reason);
     }
 
     #[test]

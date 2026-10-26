@@ -95,6 +95,9 @@ pub struct Notification {
     pub progress: Option<u8>,
     /// Milliseconds; 0 stays until dismissed, -1 is the server's default.
     pub timeout_ms: i32,
+    /// A picture to show, such as the preview a sender attached. A server that cannot read it
+    /// shows the icon.
+    pub image: Option<std::path::PathBuf>,
 }
 
 impl Notification {
@@ -108,8 +111,25 @@ impl Notification {
             category: "transfer",
             progress: None,
             timeout_ms: -1,
+            image: None,
         }
     }
+}
+
+/// Text as body markup shows it: peer and file names must not become tags or links.
+fn escape_markup(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// What happened to a posted notification.
@@ -135,6 +155,8 @@ pub struct Notifier {
     proxy: NotificationsProxy<'static>,
     routes: Routes,
     actions: bool,
+    /// The server reads the body as markup, so text from peers must be escaped.
+    markup: bool,
 }
 
 impl Notifier {
@@ -168,7 +190,8 @@ impl Notifier {
                 }
             }
         });
-        Ok(Notifier { conn: conn.clone(), proxy, routes, actions: capabilities.iter().any(|c| c == "actions") })
+        let has = |name: &str| capabilities.iter().any(|c| c == name);
+        Ok(Notifier { conn: conn.clone(), proxy, routes, actions: has("actions"), markup: has("body-markup") })
     }
 
     /// Whether the server shows action buttons.
@@ -193,8 +216,12 @@ impl Notifier {
         if let Some(value) = n.progress {
             hints.insert("value", Variant::from(i32::from(value.min(100))));
         }
+        if let Some(image) = &n.image {
+            hints.insert("image-path", Variant::from(ldrop_core::uri::path_to_file_uri(image)));
+        }
+        let body = if self.markup { escape_markup(&n.body) } else { n.body.clone() };
         let id =
-            self.proxy.notify(APP_NAME, replaces, n.icon, &n.summary, &n.body, &actions, hints, n.timeout_ms).await?;
+            self.proxy.notify(APP_NAME, replaces, n.icon, &n.summary, &body, &actions, hints, n.timeout_ms).await?;
         lock(&self.routes).insert(id, replies);
         Ok(id)
     }
@@ -220,5 +247,19 @@ impl Notifier {
             }
         };
         JobViewProxy::builder(&self.conn).path(path).build().await.ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markup_is_escaped() {
+        assert_eq!(
+            escape_markup("<b>Tom & Jerry's</b> \"x\""),
+            "&lt;b&gt;Tom &amp; Jerry&apos;s&lt;/b&gt; &quot;x&quot;"
+        );
+        assert_eq!(escape_markup("plain"), "plain");
     }
 }

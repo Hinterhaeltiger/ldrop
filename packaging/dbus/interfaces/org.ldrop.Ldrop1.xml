@@ -51,6 +51,7 @@
     <signal name="IncomingRequest">
       <arg name="transfer" type="o" />
     </signal>
+    <property name="AirDropLink" type="a{sv}" access="read" />
     <property name="Capabilities" type="a{sv}" access="read" />
     <property name="DeviceName" type="s" access="readwrite" />
     <property name="DownloadDir" type="s" access="readwrite" />

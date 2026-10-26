@@ -75,6 +75,11 @@ pub struct AirDropConfig {
     /// Intel and others: Wi-Fi drops while the Apple link is up.
     pub allow_exclusive_radio: bool,
     pub max_upload_bytes: u64,
+    /// Keep the Apple link up for the whole Everyone window instead of bringing it up when a
+    /// nearby Apple device opens its share sheet (SPEC §6.5).
+    pub keep_link_up: bool,
+    /// Weakest signal (dBm) of a share-sheet advert that brings the Apple link up.
+    pub wake_rssi: i16,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -140,6 +145,8 @@ impl Default for AirDropConfig {
             link: AirDropLink::Auto,
             allow_exclusive_radio: false,
             max_upload_bytes: 64 << 30,
+            keep_link_up: false,
+            wake_rssi: -75,
         }
     }
 }
@@ -202,6 +209,9 @@ impl Config {
         }
         if self.airdrop.max_upload_bytes == 0 {
             return Err(invalid("airdrop.max_upload_bytes", "must be greater than 0"));
+        }
+        if !(-127..=20).contains(&self.airdrop.wake_rssi) {
+            return Err(invalid("airdrop.wake_rssi", "must be between -127 and 20 dBm"));
         }
         let dir = &self.download_dir;
         if !(dir.is_empty() || dir.starts_with('/') || dir.starts_with('~')) {
@@ -352,6 +362,8 @@ mod tests {
         assert_eq!(c.quickshare.mediums, QUICKSHARE_MEDIUMS.to_vec());
         assert_eq!(c.airdrop.max_upload_bytes, 68_719_476_736);
         assert!(!c.airdrop.allow_exclusive_radio);
+        assert!(!c.airdrop.keep_link_up);
+        assert_eq!(c.airdrop.wake_rssi, -75);
         assert_eq!(c.tui.custom.accent, "cyan");
         c.validate().unwrap();
     }
@@ -380,6 +392,8 @@ enabled = true
 link = "auto"
 allow_exclusive_radio = false
 max_upload_bytes = 68719476736
+keep_link_up = false
+wake_rssi = -75
 
 [wifi]
 interface = ""

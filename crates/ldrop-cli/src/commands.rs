@@ -17,6 +17,8 @@ pub async fn status(json: bool) -> CmdResult {
     let status = client.status().await?;
     let active: Vec<_> = client.transfers().await?.into_iter().filter(|t| t.is_active()).collect();
     let left = remaining(status.visibility_expires_at).map(format_countdown);
+    // Older daemons do not have it.
+    let link = client.airdrop_link().await.unwrap_or_default();
 
     if json {
         let class = if !active.is_empty() { "transferring" } else { status.visibility.as_str() };
@@ -26,10 +28,11 @@ pub async fn status(json: bool) -> CmdResult {
             (None, _) => "Hidden".into(),
         };
         let tooltip = format!(
-            "{}: {}{}",
+            "{}: {}{}{}",
             status.device_name,
             status.visibility,
-            left.as_ref().map(|l| format!(" ({l} left)")).unwrap_or_default()
+            left.as_ref().map(|l| format!(" ({l} left)")).unwrap_or_default(),
+            if link.wifi_paused { "\nWi-Fi paused for AirDrop" } else { "" }
         );
         print_json_line(&json!({
             "text": text,
@@ -41,6 +44,8 @@ pub async fn status(json: bool) -> CmdResult {
             "visibility_expires_at": status.visibility_expires_at,
             "download_dir": status.download_dir,
             "active_transfers": active.len(),
+            "airdrop_link": link.state,
+            "wifi_paused": link.wifi_paused,
         }));
         return Ok(Exit::Ok);
     }
@@ -51,6 +56,11 @@ pub async fn status(json: bool) -> CmdResult {
         None => println!("Visibility:   {}", status.visibility),
     }
     println!("Downloads:    {}", status.download_dir);
+    match (&link.interface, link.wifi_paused) {
+        (Some(interface), true) => println!("AirDrop link: up on {interface}; Wi-Fi paused for AirDrop"),
+        (Some(interface), false) => println!("AirDrop link: up on {interface}"),
+        (None, _) => println!("AirDrop link: {}", link.state),
+    }
     println!("Transfers:    {} active", active.len());
     for t in &active {
         println!("  {}", fmt::transfer_line(t));

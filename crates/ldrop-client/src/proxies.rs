@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use ldrop_core::dbus::CapabilitiesDict;
-use zbus::{DBusError, ObjectPath, OwnedObjectPath, Variant, proxy};
+use zbus::{DBusError, ObjectPath, OwnedObjectPath, OwnedVariant, Variant, proxy};
 
 /// `org.ldrop.Error.*`, plus transport errors.
 #[derive(Debug, DBusError)]
@@ -75,6 +75,8 @@ pub trait Manager {
     fn set_download_dir(&self, dir: &str) -> zbus::Result<()>;
     #[zbus(property)]
     fn capabilities(&self) -> zbus::Result<CapabilitiesDict>;
+    #[zbus(property, name = "AirDropLink")]
+    fn air_drop_link(&self) -> zbus::Result<HashMap<String, OwnedVariant>>;
 
     fn set_visibility(&self, mode: &str, timeout_secs: u32) -> Result<()>;
     fn start_discovery(&self) -> Result<OwnedObjectPath>;

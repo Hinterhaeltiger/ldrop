@@ -12,7 +12,7 @@ use zbus::{OwnedObjectPath, interface};
 
 use crate::error::{Error, Result};
 use crate::state::{SessionReg, Shared};
-use crate::{quickshare, sim};
+use crate::{airdrop, quickshare, sim};
 
 pub fn path(id: u32) -> OwnedObjectPath {
     OwnedObjectPath::try_from(format!("{DISCOVERY_PATH_PREFIX}/{id}")).expect("valid object path")
@@ -72,6 +72,7 @@ pub async fn start(s: &Arc<Shared>, owner: String) -> zbus::Result<OwnedObjectPa
         }
     });
     tokio::spawn(quickshare::sync_discovery(s.clone()));
+    tokio::spawn(airdrop::sync_discovery(s.clone()));
     Ok(path)
 }
 
@@ -80,6 +81,7 @@ pub async fn stop(s: &Arc<Shared>, id: u32) {
         let _ = s.conn.object_server().remove::<DiscoveryIface, _>(path(id)).await;
         tracing::debug!("discovery session {id} stopped");
         tokio::spawn(quickshare::sync_discovery(s.clone()));
+        tokio::spawn(airdrop::sync_discovery(s.clone()));
     }
 }
 

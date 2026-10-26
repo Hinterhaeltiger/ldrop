@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Broadcast advertisements through BlueZ's `LEAdvertisingManager1`: we export an
+//! Advertisements through BlueZ's `LEAdvertisingManager1`: we export an
 //! `org.bluez.LEAdvertisement1` object on the system bus, and BlueZ reads its properties when
 //! we register it.
 
@@ -25,20 +25,26 @@ trait AdvertisingManager {
 const INTERVAL_MS: u32 = 100;
 
 struct AdvertisementIface {
-    service_uuid: String,
-    data: Vec<u8>,
+    /// What is advertised, for the log.
+    what: String,
+    /// `broadcast`, or `peripheral` for a connectable one.
+    kind: &'static str,
+    /// By 128-bit UUID; empty when there is none, which BlueZ takes as none.
+    service_data: HashMap<String, Vec<u8>>,
+    /// By company ID; empty when there is none.
+    manufacturer_data: HashMap<u16, Vec<u8>>,
 }
 
 #[interface(name = "org.bluez.LEAdvertisement1")]
 impl AdvertisementIface {
     /// BlueZ dropped the advertisement on its own, for example because the adapter went away.
     fn release(&self) {
-        tracing::debug!("BLE: BlueZ released the {} advertisement", self.service_uuid);
+        tracing::debug!("BLE: BlueZ released the {} advertisement", self.what);
     }
 
     #[zbus(property, name = "Type")]
     fn kind(&self) -> &str {
-        "broadcast"
+        self.kind
     }
 
     /// Advertise as often as BLE allows a sender to, like Android's low-latency mode: phones
@@ -56,9 +62,17 @@ impl AdvertisementIface {
 
     #[zbus(property)]
     fn service_data(&self) -> HashMap<String, OwnedVariant> {
-        let data = Variant::from(&self.data).try_into_owned().expect("byte arrays hold no file descriptors");
-        HashMap::from([(self.service_uuid.clone(), data)])
+        self.service_data.iter().map(|(uuid, data)| (uuid.clone(), bytes(data))).collect()
     }
+
+    #[zbus(property)]
+    fn manufacturer_data(&self) -> HashMap<u16, OwnedVariant> {
+        self.manufacturer_data.iter().map(|(company, data)| (*company, bytes(data))).collect()
+    }
+}
+
+fn bytes(data: &[u8]) -> OwnedVariant {
+    Variant::from(data).try_into_owned().expect("byte arrays hold no file descriptors")
 }
 
 /// A registered advertisement. Unregistered when dropped (in the background) or by [`stop`].
@@ -101,24 +115,47 @@ async fn unregister(conn: &Connection, adapter: &OwnedObjectPath, path: &OwnedOb
 /// Broadcasts `data` as service data for the 16-bit `uuid16` on the first powered adapter that
 /// can advertise. `Ok(None)` when there is none; adapters are never powered on (SPEC §3.5).
 pub async fn advertise_service_data(uuid16: u16, data: Vec<u8>) -> zbus::Result<Option<Advertisement>> {
+    let service_uuid = format!("0000{uuid16:04x}-0000-1000-8000-00805f9b34fb");
+    advertise(AdvertisementIface {
+        what: format!("{service_uuid} service data"),
+        kind: "broadcast",
+        service_data: HashMap::from([(service_uuid, data)]),
+        manufacturer_data: HashMap::new(),
+    })
+    .await
+}
+
+/// Advertises `data` as manufacturer data for `company`, connectable as Apple's own adverts
+/// are, though nothing connects. Like [`advertise_service_data`] otherwise.
+pub async fn advertise_manufacturer_data(company: u16, data: Vec<u8>) -> zbus::Result<Option<Advertisement>> {
+    advertise(AdvertisementIface {
+        what: format!("{company:#06x} manufacturer data"),
+        kind: "peripheral",
+        service_data: HashMap::new(),
+        manufacturer_data: HashMap::from([(company, data)]),
+    })
+    .await
+}
+
+async fn advertise(iface: AdvertisementIface) -> zbus::Result<Option<Advertisement>> {
     static NEXT_ID: AtomicU32 = AtomicU32::new(0);
 
     let conn = Connection::system().await?;
     let Some(adapter) = advertising_adapter(&conn).await? else { return Ok(None) };
-    let service_uuid = format!("0000{uuid16:04x}-0000-1000-8000-00805f9b34fb");
     let path = OwnedObjectPath::try_from(format!(
         "/org/ldrop/ble/adv{}_{}",
         std::process::id(),
         NEXT_ID.fetch_add(1, Ordering::Relaxed)
     ))?;
-    conn.object_server().at(&path, AdvertisementIface { service_uuid: service_uuid.clone(), data }).await?;
+    let what = iface.what.clone();
+    conn.object_server().at(&path, iface).await?;
 
     let manager = AdvertisingManagerProxy::builder(&conn).path(adapter.clone()).build().await?;
     if let Err(e) = manager.register_advertisement(&path, HashMap::new()).await {
         let _ = conn.object_server().remove::<AdvertisementIface, _>(&path).await;
         return Err(e);
     }
-    tracing::debug!("BLE: advertising {service_uuid} service data on {adapter}");
+    tracing::debug!("BLE: advertising {what} on {adapter}");
     Ok(Some(Advertisement { conn, adapter, path, stopped: false }))
 }
 

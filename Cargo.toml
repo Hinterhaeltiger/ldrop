@@ -6,6 +6,7 @@ members = [
     "crates/ldrop-ble",
     "crates/ldrop-bt",
     "crates/ldrop-quickshare",
+    "crates/ldrop-airdrop",
     "crates/ldrop-mdns",
     "crates/ldropd",
     "crates/ldrop-client",
@@ -13,6 +14,8 @@ members = [
     "crates/ldrop-tui",
     "crates/ldrop-gui",
 ]
+# Vendored upstream crates, patched in below.
+exclude = ["third_party"]
 
 [workspace.package]
 version = "0.1.0"
@@ -27,6 +30,7 @@ ldrop-wifi = { path = "crates/ldrop-wifi" }
 ldrop-ble = { path = "crates/ldrop-ble" }
 ldrop-bt = { path = "crates/ldrop-bt" }
 ldrop-quickshare = { path = "crates/ldrop-quickshare" }
+ldrop-airdrop = { path = "crates/ldrop-airdrop" }
 ldrop-mdns = { path = "crates/ldrop-mdns" }
 ldrop-client = { path = "crates/ldrop-client" }
 ldropd = { path = "crates/ldropd" }
@@ -48,11 +52,13 @@ hmac = "0.13"
 mdns-sd = "0.21"
 mime_guess = "2"
 nix = { version = "0.31", features = ["fs", "net", "hostname", "socket"] }
+owly-airdrop = { version = "=0.1.0", default-features = false, features = ["tokio", "mdns"] }
 p256 = { version = "0.14", features = ["ecdh"] }
 prost = "0.14"
 prost-build = "0.14"
 rand = "0.9"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_ignored = "0.1"
 serde_json = "1"
@@ -71,3 +77,9 @@ zbus = { version = "6.1", default-features = false, features = ["tokio", "proxy"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+# owly-airdrop 0.1.0 plus receive progress and cancel, an event for an abandoned upload, and a
+# spool directory and an "asking" event for sending; see third_party/README.md. Drop this once
+# upstream has them.
+[patch.crates-io]
+owly-airdrop = { path = "third_party/owly-airdrop" }

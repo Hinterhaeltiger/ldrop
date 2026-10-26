@@ -10,9 +10,9 @@ mod upgrade;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Context;
 use ldrop_core::paths::resolve_download_dir;
@@ -39,15 +39,11 @@ use tokio_util::sync::CancellationToken;
 use crate::consent::{self, Decision};
 use crate::discovery;
 use crate::error::{Error, Result};
+use crate::prompts::Prompts;
 use crate::state::Shared;
 use crate::transfer::{self, TransferRecord};
 
 const DEVICE_PREFIX: &str = "qs-";
-/// At most this many prompts wait at once, and one per peer (SPEC §9).
-const MAX_PROMPTS: usize = 3;
-const MAX_PROMPTS_PER_PEER: usize = 1;
-/// A peer whose request was declined or timed out cannot ask again for this long (SPEC §14).
-const REJECT_COOLDOWN: Duration = Duration::from_secs(30);
 /// Connections being served at once, handshakes included.
 const MAX_INCOMING: usize = 16;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -57,6 +53,7 @@ pub struct Backend {
     lan: Option<Lan>,
     bt: bluetooth::Bluetooth,
     incoming: Arc<Semaphore>,
+    prompts: Arc<Prompts<Origin>>,
     /// Serializes starting and stopping discovery.
     discovery: tokio::sync::Mutex<Option<DiscoveryRun>>,
     inner: Mutex<Inner>,
@@ -73,8 +70,6 @@ struct Inner {
     visible: Option<Visible>,
     /// How to reach the devices the current discovery run reported, by device ID.
     peers: HashMap<String, Route>,
-    prompts: HashMap<Origin, usize>,
-    cooldown: HashMap<Origin, Instant>,
 }
 
 struct Visible {
@@ -132,42 +127,6 @@ impl Backend {
     fn own_endpoint(&self) -> Option<EndpointId> {
         self.inner().visible.as_ref().map(|v| v.id)
     }
-
-    /// Reserves a prompt for `origin`, or `None` when the limits or a cooldown say no.
-    fn try_prompt(self: &Arc<Self>, origin: &Origin) -> Option<PromptSlot> {
-        let mut inner = self.inner();
-        let now = Instant::now();
-        inner.cooldown.retain(|_, until| *until > now);
-        let total: usize = inner.prompts.values().sum();
-        let mine = inner.prompts.get(origin).copied().unwrap_or(0);
-        if inner.cooldown.contains_key(origin) || total >= MAX_PROMPTS || mine >= MAX_PROMPTS_PER_PEER {
-            return None;
-        }
-        *inner.prompts.entry(origin.clone()).or_default() += 1;
-        Some(PromptSlot { qs: self.clone(), origin: origin.clone() })
-    }
-
-    fn cool_down(&self, origin: &Origin) {
-        self.inner().cooldown.insert(origin.clone(), Instant::now() + REJECT_COOLDOWN);
-    }
-}
-
-/// A pending prompt, released when dropped.
-struct PromptSlot {
-    qs: Arc<Backend>,
-    origin: Origin,
-}
-
-impl Drop for PromptSlot {
-    fn drop(&mut self) {
-        let mut inner = self.qs.inner();
-        if let Some(n) = inner.prompts.get_mut(&self.origin) {
-            *n -= 1;
-            if *n == 0 {
-                inner.prompts.remove(&self.origin);
-            }
-        }
-    }
 }
 
 fn backend(s: &Shared) -> Option<Arc<Backend>> {
@@ -210,6 +169,7 @@ pub async fn start(s: &Arc<Shared>) -> anyhow::Result<()> {
         lan,
         bt: bluetooth::Bluetooth::new(marker),
         incoming: Arc::new(Semaphore::new(MAX_INCOMING)),
+        prompts: Prompts::new(),
         discovery: tokio::sync::Mutex::new(None),
         inner: Mutex::new(Inner::default()),
     });
@@ -363,7 +323,7 @@ impl Incoming {
     }
 
     async fn on_offer(&mut self, offer: Offer, mut reply: tokio::sync::oneshot::Sender<Answer>) {
-        let Some(slot) = self.qs.try_prompt(&self.origin) else {
+        let Some(slot) = self.qs.prompts.try_prompt(&self.origin) else {
             tracing::info!(
                 "Quick Share: declining a request from {}: too many pending requests, or declined recently",
                 self.origin
@@ -394,7 +354,7 @@ impl Incoming {
         self.layout = (offer.files.len(), offer.texts.len());
 
         let dir = resolve_download_dir(&self.s.state().config.download_dir);
-        if !has_room(&dir, offer.total_size()) {
+        if !storage::fits(&dir, offer.total_size()) {
             let _ = reply.send(Answer::Reject(RejectReason::NotEnoughSpace));
             transfer::update(&self.s, id, |p| {
                 p.state = TransferState::Rejected;
@@ -427,7 +387,7 @@ impl Incoming {
                 }
             },
             Decision::Reject | Decision::Timeout => {
-                self.qs.cool_down(&self.origin);
+                self.qs.prompts.cool_down(&self.origin);
                 let (reason, error) = match decision {
                     Decision::Timeout => (RejectReason::TimedOut, "no answer before the deadline"),
                     _ => (RejectReason::Declined, ""),
@@ -537,13 +497,6 @@ fn items(offer: &Offer) -> Vec<Item> {
         text: Some(String::new()),
     });
     files.chain(texts).chain(wifi).collect()
-}
-
-/// Free-space check on the download dir, or the closest existing parent when it does not exist
-/// yet. Errors count as room: the write fails loudly later if there is none.
-fn has_room(dir: &Path, bytes: u64) -> bool {
-    let existing = dir.ancestors().find(|d| d.is_dir()).unwrap_or(dir);
-    storage::has_room(existing, bytes).unwrap_or(true)
 }
 
 fn kind(t: DeviceType) -> DeviceKind {

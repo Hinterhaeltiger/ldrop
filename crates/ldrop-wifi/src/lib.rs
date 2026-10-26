@@ -4,6 +4,7 @@
 //! networks for the bandwidth upgrade go through NetworkManager ([`nm`]).
 
 pub mod nm;
+pub mod owly;
 
 use std::collections::BTreeMap;
 use std::fs;

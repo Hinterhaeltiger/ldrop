@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ldrop_client::{Decision, IncomingRequest, Status, TransferInfo};
+use ldrop_client::{AirDropLink, Decision, IncomingRequest, Status, TransferInfo};
 use ldrop_core::capabilities::DoctorReport;
 use ldrop_core::config::Config;
 use ldrop_core::{Device, Item, TransferState, Visibility};
@@ -79,6 +79,7 @@ pub enum Event {
     },
     Disconnected(String),
     Status(Status),
+    AirDropLink(AirDropLink),
     Capabilities(DoctorReport),
     Config(Config),
     DiscoveryStarted,
@@ -232,6 +233,7 @@ pub struct App {
     pub tab: Tab,
     pub conn: Conn,
     pub status: Option<Status>,
+    pub airdrop_link: AirDropLink,
     pub capabilities: Option<DoctorReport>,
     pub config: Config,
     pub home: Option<PathBuf>,
@@ -258,6 +260,7 @@ impl App {
             tab: Tab::Devices,
             conn: Conn::Connecting,
             status: None,
+            airdrop_link: AirDropLink::default(),
             capabilities: None,
             config,
             home,
@@ -354,6 +357,10 @@ impl App {
             }
             Event::Status(status) => {
                 self.status = Some(status);
+                Vec::new()
+            }
+            Event::AirDropLink(link) => {
+                self.airdrop_link = link;
                 Vec::new()
             }
             Event::Capabilities(report) => {

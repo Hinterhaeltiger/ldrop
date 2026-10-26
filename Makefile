@@ -125,6 +125,12 @@ install:
 	@echo "  systemctl --user daemon-reload && systemctl --user enable --now ldropd"
 	@echo "Then log out and back in: the tray, the Plasma applet or GNOME extension, and the"
 	@echo "file manager entries start with the session."
+	@if [ -z "$(DESTDIR)" ] && ! for d in /usr/share /usr/local/share; do \
+		[ -e $$d/dbus-1/system-services/io.github.t4t5.Owly.service ] && break; false; done; then \
+		echo; \
+		echo "Note: Owly's radio service (owlyd) is not installed, so AirDrop stays off."; \
+		echo "  Arch: yay -S owly; .deb/.rpm: https://github.com/t4t5/owly/releases"; \
+	fi
 
 # Everything under ~/.local and ~/.config. The KDE Share menu plugin and the native Nautilus
 # extension need system directories, so they are left out here.

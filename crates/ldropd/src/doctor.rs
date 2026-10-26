@@ -4,7 +4,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ldrop_core::capabilities::{BluetoothReport, DoctorReport, NetworkReport, Policy, WifiReport, evaluate};
+use ldrop_core::capabilities::{
+    BluetoothReport, DoctorReport, NetworkReport, OwlyReport, Policy, WifiReport, apply_owly, evaluate,
+};
 use nix::ifaddrs::getifaddrs;
 use nix::net::if_::InterfaceFlags;
 use nix::sys::socket::{AddressFamily, SockaddrLike};
@@ -21,21 +23,37 @@ pub async fn probe(policy: Policy, hardware: bool) -> DoctorReport {
     } else {
         (WifiReport::default(), BluetoothReport::default())
     };
+    // owlyd only matters with a Wi-Fi card; asking starts it (D-Bus activation).
+    let owly = if hardware && wifi.present { ldrop_wifi::owly::report().await } else { OwlyReport::default() };
     let network = lan_report();
-    let backends = evaluate(&network, &wifi, &bluetooth, policy);
+    let mut backends = evaluate(&network, &wifi, &bluetooth, policy);
+    apply_owly(&mut backends, &owly, policy, &bluetooth);
     let mut notes = vec![
         "Receiving needs inbound mDNS (5353/udp) and the Quick Share TCP port on the LAN; \
          AirDrop needs 8771/tcp on awdl0."
             .to_owned(),
     ];
-    if wifi.present {
+    if wifi.present && !owly.present {
         notes.push(
-            "AirDrop verdicts use ldrop's built-in copy of Owly's hardware matrix (Oct 2026); \
-             M6 switches to Owly's drivers.toml and `ldrop doctor --card-test`."
+            "AirDrop needs Owly's radio service: install the `owly` package (Arch: `yay -S owly`; \
+             .deb and .rpm on github.com/t4t5/owly/releases). AirDrop verdicts above use ldrop's \
+             built-in copy of Owly's hardware matrix until then."
                 .to_owned(),
         );
     }
-    DoctorReport { backends, network, wifi, bluetooth, notes }
+    if owly.present && ufw_enabled() {
+        notes.push(
+            "ufw is on: allow AirDrop with `sudo ufw allow in on awdl0 from fe80::/10 to any port 8771 proto tcp`."
+                .to_owned(),
+        );
+    }
+    DoctorReport { backends, network, wifi, bluetooth, owly, notes }
+}
+
+/// Whether ufw's config enables it. Unreadable counts as off.
+fn ufw_enabled() -> bool {
+    std::fs::read_to_string("/etc/ufw/ufw.conf")
+        .is_ok_and(|c| c.lines().any(|l| l.trim().eq_ignore_ascii_case("ENABLED=yes")))
 }
 
 /// Re-probes, stores the report, and emits `Capabilities` changes when the verdicts moved.

@@ -71,6 +71,29 @@ pub fn render(r: &DoctorReport) -> String {
         }
     }
 
+    if r.wifi.present {
+        out += "\nOwly (owlyd)\n";
+        let o = &r.owly;
+        if let Some(e) = &o.error {
+            out += &format!("  {e}\n");
+        } else if !o.present {
+            out += "  not installed\n";
+        } else {
+            let card = [&o.station, &o.driver, &o.device].into_iter().flatten().cloned().collect::<Vec<_>>();
+            let card = if card.is_empty() { "no card".to_owned() } else { card.join(", ") };
+            let mode = o.mode.as_deref().unwrap_or("no mode");
+            let status = o.status.as_deref().map(|s| format!(", {s}")).unwrap_or_default();
+            let channel = o.channel.map(|c| format!(" on channel {c}")).unwrap_or_default();
+            out += &format!("  {card}: {mode}{channel}{status}\n");
+            for (_, say) in &o.missing {
+                out += &format!("  missing: {say}\n");
+            }
+            for issue in &o.issues {
+                out += &format!("  issue: {issue}\n");
+            }
+        }
+    }
+
     out += "\nBluetooth\n";
     let b = &r.bluetooth;
     if let Some(e) = &b.error {
