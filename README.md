@@ -8,19 +8,20 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
 - **Quick Share** (Android) in both directions: files, text and links, with PIN, decline and
   cancel from either side.
   - Over the local network (mDNS discovery), or over Bluetooth when there is no shared network.
+    Phones are found from their BLE advertisements, so a computer without Wi-Fi finds them too.
   - Bluetooth transfers move to Wi-Fi once they start: the same network, or a hotspot when allowed.
 - **Frontends:**
   - `ldrop` command;
   - `ldrop-tui` terminal interface;
   - `ldrop-gui` for the tray and desktop notifications (Accept/Decline, progress);
-  - a share sheet window, opened from file managers ("Send with ldrop", or "Open with ldrop"
-    in any of them) and the KDE Share menu;
+  - a share sheet window, opened from file managers ("Send with ldrop" right in the context
+    menu, or "Open with ldrop" in any of them) and the KDE Share menu;
   - a Plasma system-tray applet and a GNOME Quick Settings toggle.
 - **Not yet:** AirDrop, Wi-Fi Direct hosting, and the main GUI window.
 
 ## Requirements
 
-- **To build:** Rust 1.89+, `protoc`, a C++ toolchain, and Qt 6 (for `ldrop-gui`).
+- **To build:** Rust 1.89+, `protoc`, a C/C++ toolchain, and Qt 6 (for `ldrop-gui`).
   - Arch: `rust protobuf base-devel qt6-declarative`.
   - Debian/Ubuntu: `cargo protobuf-compiler build-essential qt6-declarative-dev
     qt6-base-dev`.
@@ -28,7 +29,8 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
     purpose`; Debian/Ubuntu `cmake libkf6purpose-dev`.
 - **To run:**
   - a D-Bus session;
-  - BlueZ with a powered adapter, for Bluetooth;
+  - BlueZ with a powered adapter, for Bluetooth; sending to phones found over BLE also needs
+    `Experimental = true` in `/etc/bluetooth/main.conf` (see [Bluetooth](#use));
   - NetworkManager, for Wi-Fi switching (plus dnsmasq for hosting a hotspot);
   - a notification server, for the tray prompts;
   - Kirigami, for the share sheet (Arch `kirigami`, Debian/Ubuntu `qml6-module-org-kde-kirigami`).
@@ -45,9 +47,10 @@ cd ldrop
 make
 ```
 
-This builds `ldropd` (daemon), `ldrop` (CLI), `ldrop-tui` and `ldrop-gui` in `target/release/`,
-and the KDE Share menu plugin when CMake and Purpose are installed (otherwise it says so and
-skips it). Build as your user, not as root.
+This builds `ldropd` (daemon), `ldrop` (CLI), `ldrop-tui` and `ldrop-gui` in `target/release/`.
+It also builds the KDE Share menu plugin when CMake and Purpose are installed, and the native
+Nautilus extension when its headers are; otherwise it says so and skips them. Build as your
+user, not as root.
 
 ## Install
 
@@ -133,8 +136,10 @@ it on). It is slow, about 100–200 KB/s, so it suits photos and documents more 
 - *Sending:* `ldrop devices` also lists phones that are visible over Bluetooth, found from
   their BLE advertisements, so a computer without Wi-Fi finds them too. ldrop uses the LAN
   when the device is there too, and Bluetooth otherwise.
-  - On the phone, open Quick Share and set it to *Everyone*, with the screen on. Phones that
-    are visible to contacts only don't say where to connect, so ldrop can't list them.
+  - On the phone, set Quick Share to *Everyone*. While searching, ldrop sends a BLE wake-up
+    advertisement, so the phone usually shows up within a few seconds, even with its screen
+    off. Phones that are visible to contacts only don't say where to connect, so ldrop can't
+    list them.
   - A phone found only over BLE is reached at the Bluetooth address it advertises, which
     needs BlueZ's experimental `ConnectDevice`: set `Experimental = true` under `[General]`
     in `/etc/bluetooth/main.conf` and restart `bluetooth.service`.
@@ -276,7 +281,7 @@ name. The design and milestones are in [SPEC.md](SPEC.md).
 | `crates/ldrop-cli` | `ldrop` command |
 | `crates/ldrop-tui` | `ldrop-tui` terminal interface |
 | `crates/ldrop-gui` | `ldrop-gui`: tray icon, notifications, share sheet (Rust + cxx-qt, QML in `qml/`) |
-| `integrations/` | File manager entries (Dolphin, Nautilus, Nemo, Caja, PCManFM-Qt), the KDE Share menu plugin, the GNOME Shell extension |
+| `integrations/` | File manager entries (Dolphin, Nemo, Caja, PCManFM-Qt), the Nautilus extension (native C, and a nautilus-python fallback), the KDE Share menu plugin, the GNOME Shell extension |
 | `docs/` | Recipes for window managers ([docs/wm.md](docs/wm.md)) |
 | `packaging/` | systemd user unit, D-Bus activation file, desktop and autostart entries, Plasma tray applet, API introspection XML |
 | `Makefile` | Build and install everything (`make`, `make install`, `make install-user`) |
