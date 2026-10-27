@@ -26,3 +26,6 @@ Thumbs.db
 
 # CMake builds of integrations/ (README)
 /build/
+
+# Release tarballs (packaging/dist.sh)
+/dist/
