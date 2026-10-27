@@ -28,3 +28,6 @@ Thumbs.db
 /build/
 # Built by editors that open the vendored crates on their own.
 /third_party/*/target/
+
+# Release tarballs (packaging/dist.sh)
+/dist/

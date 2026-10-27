@@ -47,6 +47,22 @@ peer to peer. The design is in [SPEC.md](SPEC.md).
     `libnautilus-extension-dev`) for *Send with ldrop* directly in Nautilus' menu. Without
     them, nautilus-python does the same, and without that ldrop adds it under *Scripts*.
 
+## Prebuilt release
+
+Each [release](https://github.com/Hinterhaeltiger/ldrop/releases) has an x86_64 tarball with
+the four programs already built (on Ubuntu 24.04, so they need glibc 2.39 and Qt 6.4 or newer).
+Install it like a source build, minus the build:
+
+```sh
+tar xzf ldrop-<version>-x86_64-linux.tar.gz
+cd ldrop-<version>-x86_64-linux
+sudo make install       # or: make install-user
+```
+
+It leaves out the native Nautilus extension and the KDE Share menu plugin; Nautilus gets the
+nautilus-python extension instead. Build from source for those. Then continue with
+[Set up](#set-up).
+
 ## Build
 
 ```sh
@@ -343,6 +359,17 @@ link-local address: `ldropd --airdrop-interface <if>` skips owlyd and the Blueto
 The TUI compares every screen against text snapshots in
 `crates/ldrop-tui/snapshots/`; after an intended change to the layout, rewrite them with
 `LDROP_UPDATE_SNAPSHOTS=1 cargo test -p ldrop-tui` and review the diff.
+
+### Releases
+
+Pushing a version tag builds and publishes a release (`.github/workflows/release.yml`):
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Tags with a suffix, such as `v0.2.0-alpha.1`, become pre-releases. The workflow packs the
+tarball with `packaging/dist.sh VERSION`, which works locally too after `make build`.
 
 ## License
 
